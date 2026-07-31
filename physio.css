@@ -5,3 +5,23 @@ body.physio-open{overflow:hidden!important}.physio-app{height:100dvh!important;o
 .photo-remove{display:none;position:absolute;right:10px;top:10px;z-index:8;border:1px solid #ffffffaa;border-radius:999px;background:#173f35dd;color:#fff;padding:8px 11px;font-weight:700;box-shadow:0 5px 16px #0a261d42}.photo-box.loaded .photo-remove{display:block}.photo-remove:active{transform:scale(.96)}
 
 @media(max-width:760px){.destiny-open .sidebar{position:fixed!important;left:0!important;top:0!important;bottom:0!important;height:100dvh!important;z-index:90!important}}
+
+/* cover-v2 */
+.top-actions{display:flex;align-items:center;gap:8px}
+.decision-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+.decision.joy{border-color:#d6c39b;background:linear-gradient(145deg,#fffaf0,#f3efe0)}
+.decision b{line-height:1.85;font-weight:600}
+.new-question{border:1px solid #b9944a!important;background:linear-gradient(145deg,#fffaf0,#efe1b8)!important;color:#6b4e18!important;font-weight:800!important}
+.new-question[hidden]{display:none!important}
+.portal{isolation:isolate;background:radial-gradient(circle at 14% 16%,#8dc8b34d 0 15%,transparent 34%),radial-gradient(circle at 86% 82%,#d6b66b33 0 12%,transparent 33%),linear-gradient(145deg,#062934 0%,#0d4248 42%,#245945 72%,#193e35 100%)}
+.portal:before,.portal:after{content:"";position:absolute;z-index:-1;border:1px solid #f4ddb052;border-radius:50%;pointer-events:none}
+.portal:before{width:min(64vw,760px);height:min(64vw,760px);left:-22vw;top:-36vw;box-shadow:0 0 0 34px #ffffff08,0 0 0 68px #ffffff05}
+.portal:after{width:420px;height:420px;right:-180px;bottom:-230px;box-shadow:0 0 0 42px #efd7970b,0 0 0 84px #efd79708}
+.portal-inner{position:relative;padding:clamp(26px,5vw,66px);border:1px solid #ffffff2e;border-radius:34px;background:linear-gradient(145deg,#ffffff13,#ffffff08);box-shadow:0 32px 90px #001c2585,inset 0 1px #ffffff2e;backdrop-filter:blur(18px)}
+.portal-inner:before{content:"☯";position:absolute;right:clamp(24px,5vw,72px);top:clamp(22px,4vw,56px);font-size:clamp(54px,9vw,112px);line-height:1;color:#efd7971f;text-shadow:0 0 55px #efd79728}
+.portal-mark{display:inline-flex;align-items:center;gap:12px;color:#fff5d8}.portal-mark:before{content:"序";display:grid;place-items:center;width:42px;height:42px;border:1px solid #efd79780;border-radius:50%;font:700 17px var(--serif);background:#062a2d80;box-shadow:0 0 0 7px #ffffff08}
+.portal-kicker{margin-top:46px;color:#efd797;font-weight:700}.portal h1{max-width:720px;letter-spacing:.04em;text-shadow:0 8px 30px #001c2680}.portal-lead{font-size:16px}
+.portal-grid{gap:20px}.portal-card{position:relative;overflow:hidden;min-height:260px;padding:32px;border-color:#ffffff32;background:linear-gradient(145deg,#ffffff16,#ffffff08);box-shadow:inset 0 1px #ffffff25,0 18px 42px #001a2245;transition:transform .25s ease,border-color .25s ease,background .25s ease}.portal-card:before{content:"命";position:absolute;right:24px;top:14px;font:500 76px var(--serif);color:#efd7971c}.portal-card:last-child:before{content:"相"}.portal-card:hover{transform:translateY(-5px);border-color:#efd7977a;background:linear-gradient(145deg,#ffffff1e,#ffffff0c)}
+.portal-card small{color:#a9d6c8;letter-spacing:.18em}.portal-card h2{font-size:31px;margin:15px 0 4px}.portal-card strong{position:absolute;left:32px;bottom:28px;letter-spacing:.06em}.portal-card strong:after{content:"";display:inline-block;width:42px;margin-left:12px;border-top:1px solid currentColor;vertical-align:middle}
+.question-answer p{white-space:pre-line}
+@media(max-width:680px){.decision-grid{grid-template-columns:1fr!important}.top-actions{gap:5px}.top-actions button{padding:7px 8px!important}.portal{padding:18px}.portal-inner{padding:26px 20px;border-radius:25px}.portal-inner:before{right:18px;top:18px}.portal-kicker{margin-top:28px}.portal-grid{gap:13px;margin-top:24px}.portal-card{min-height:210px;padding:24px}.portal-card strong{left:24px;bottom:22px}}
