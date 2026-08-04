@@ -136,3 +136,132 @@ const DEEP_TEST_QUESTIONS=[
  {label:'种植经营',question:'本年下半年种地能不能赚钱？该守熟地熟种还是扩大种植，成本、收成、销路和回款哪一项最要紧？'},
  {label:'感情去留',question:'这段感情还能不能继续并走到婚姻？双方最大的阻力是什么，最后能不能把名分和现实安排定下来？'}
 ];document.querySelectorAll('.quick button').forEach((button,index)=>{let item=DEEP_TEST_QUESTIONS[index];if(item){button.textContent=item.label;button.dataset.q=item.question}})
+
+/* 深问直断：只呈现结论、应期与执行边界，不在答案里展开排盘步骤。 */
+const bookStyleTopicDetector=detectTopic;
+detectTopic=function(q){
+  q=String(q||'');
+  if(/股票|炒股|个股|大盘|基金|证券|持仓|板块|赛道|牛市|熊市/.test(q))return'wealth';
+  if(/心上人|正缘|姻缘|桃花|另一半|未来对象|婚期|哪年结婚|何时结婚/.test(q))return'relation';
+  if(/开店|生意|买卖|创业|经营|种地|种田|种植|养殖|收成/.test(q))return'wealth';
+  return bookStyleTopicDetector(q);
+};
+const DEEP_SECTORS={
+  木:{stock:'农林种业、医药研发、教育文化、家居纸业',business:'教育培训、文化内容、健康服务、农林产品与家居类'},
+  火:{stock:'电子、半导体、软件传媒、新能源设备',business:'电子科技、软件服务、传播展示、餐饮能源与美容类'},
+  土:{stock:'基建、建材、公用事业、仓储和地产产业链',business:'工程建材、仓储供应链、社区服务、食品与不动产配套类'},
+  金:{stock:'银行保险、券商、高端制造、金属机械',business:'金融服务、机械五金、汽车配套、珠宝器械与标准化管理类'},
+  水:{stock:'港口航运、物流、水务、贸易和通信服务',business:'物流贸易、旅游出行、饮品水务、咨询信息与流通类'}
+};
+const DEEP_TRAITS={
+  木:'身形偏修长，性情直而有生气，重成长与原则，做事肯往前推',
+  火:'神情明快，反应快，表达直接，热情来得快，也需要被尊重',
+  土:'气质稳重，重家庭与现实安排，做事慢些，但答应后较能守住',
+  金:'轮廓清楚，做事利落，守规则、讲效率，感情里不喜欢反复猜测',
+  水:'气质灵动，善沟通，见识面较宽，常带异地、网络或流动工作的特点'
+};
+function deepYearStem(year){return mod(year-4,10)}
+function deepYearBranch(year){return mod(year-4,12)}
+function deepYearName(year){let now=new Date().getFullYear();return year===now?'本年':`${year}年`}
+function deepSpouseElement(profile){
+  let day=profile?.chart?.pillars?.[2]?.[0]??0,self=Math.floor(day/2),female=profile?.gender==='女';
+  return ['木','火','土','金','水'][mod(self+(female?3:2),5)];
+}
+function deepUsefulElement(profile){
+  let counts=profile?.chart?.counts||{},names=['木','火','土','金','水'];
+  return names.slice().sort((a,b)=>(counts[a]??0)-(counts[b]??0)||names.indexOf(a)-names.indexOf(b))[0];
+}
+function deepRelationYears(profile){
+  let chart=profile?.chart||{},birthBranch=chart.pillars?.[0]?.[1]??0,spouse=deepSpouseElement(profile),now=new Date().getFullYear();
+  let red=[3,2,1,0,11,10,9,8,7,6,5,4][birthBranch],happy=mod(red+6,12),peach=({0:9,4:9,8:9,2:3,6:3,10:3,3:0,7:0,11:0,1:6,5:6,9:6})[birthBranch];
+  return Array.from({length:9},(_,i)=>{let year=now+i,branch=deepYearBranch(year),element=elements[deepYearStem(year)],score=(branch===red?6:0)+(branch===happy?4:0)+(branch===peach?3:0)+(element===spouse?3:0)+(i===0?0.2:0);return{year,branch,element,score}}).sort((a,b)=>b.score-a.score||a.year-b.year);
+}
+function deepGeneralYears(profile,kind){
+  let now=new Date().getFullYear(),chart=profile?.chart||{},day=Math.floor((chart.pillars?.[2]?.[0]??0)/2),target=kind==='career'?mod(day+3,5):kind==='wealth'?mod(day+2,5):mod(day+1,5);
+  return Array.from({length:7},(_,i)=>{let year=now+i,element=Math.floor(deepYearStem(year)/2),score=(element===target?4:0)+(i===1?1:0)+(i===2?0.5:0);return{year,score}}).sort((a,b)=>b.score-a.score||a.year-b.year);
+}
+function deepPalaceText(chart,name){let p=chart?.palaces?.find(x=>x.name===name);return`${p?.stars||''}${p?.transform||''}`}
+function deepStockTypes(profile){
+  let chart=profile?.chart||{},element=deepUsefulElement(profile),sign=`${deepPalaceText(chart,'财帛')}${deepPalaceText(chart,'官禄')}${deepPalaceText(chart,'福德')}`;
+  let extra=/武曲|天府|禄存/.test(sign)?'现金流稳、负债低、行业地位清楚的龙头':/天机|文昌|文曲/.test(sign)?'技术、信息、软件和研发能力能落实为收入的公司':/太阳|景门/.test(sign)?'科技设备、新能源和传播服务中已有真实订单的公司':/天梁|天同/.test(sign)?'医药服务、公用事业和稳定消费中盈利连续的公司':/贪狼|廉贞/.test(sign)?'消费与周期类中库存低、周转快的公司':'主营清楚、连续盈利、现金流能覆盖负债的公司';
+  return`类型上先看${DEEP_SECTORS[element].stock}，再从中挑${extra}。这说的是行业象，不是叫你闭眼买某只股票；同一板块里，优先看利润来自主营、经营现金流为正、估值不过分透支的标的。ST、连续亏损、高质押、高负债、只靠概念和消息拉升的，不在可选之列。`;
+}
+function deepLoveAnswer(profile,question){
+  let years=deepRelationYears(profile),first=years[0],second=years.find(x=>x.year!==first.year),element=deepSpouseElement(profile),where=({木:'工作进修、同行往来或课程活动',火:'公开活动、朋友聚会或网络互动',土:'亲友介绍、固定生活圈或处理家宅事务时',金:'工作业务、制度型单位或专业合作中',水:'异地往来、旅行流动、网络沟通或贸易物流场合'})[element];
+  let timing=`较强应期以${deepYearName(first.year)}最明显，${deepYearName(second.year)}还有一次承接；前一个年份容易先遇见或关系升温，后一个年份较利于把名分和现实安排定下来。`;
+  let portrait=`对方多带${element}性，${DEEP_TRAITS[element]}，较可能在${where}出现。`;
+  if(/结婚|婚期|成婚|领证/.test(question))return`${timing}若届时仍只有暧昧、失联和口头承诺，不作婚成论；能公开关系，并把居住、收入、双方父母与婚期谈定，才是真正应在婚姻上。${portrait}`;
+  return`${timing}${portrait}不是完全陌生的一眼定终身，更像先因事情往来而熟，再由持续回应转成感情；若只在短期热烈、现实上始终回避，便是桃花而非正缘。`;
+}
+function deepQuestionKind(question,topic){
+  let q=String(question||'');
+  if(/股票|炒股|个股|基金|证券|板块|赛道/.test(q))return'stock';
+  if(/心上人|正缘|姻缘|桃花|另一半|未来对象|什么时候.*(?:遇到|出现)|哪年.*(?:遇到|恋爱)|结婚|婚期|成婚|领证/.test(q))return'love';
+  if(/适合.*(?:工作|职业|岗位|行业)|做什么工作|什么职业/.test(q))return'jobtype';
+  if(/开店|生意|买卖|创业|经营项目/.test(q))return'business';
+  if(/哪年|哪一年|什么时候|何时/.test(q)&&topic==='career')return'careerTime';
+  if(/哪年|哪一年|什么时候|何时/.test(q)&&topic==='wealth')return'wealthTime';
+  return'';
+}
+function deepSpecificAnswer(s,kind){
+  let profile=activeProfile(),q=s.question,element=deepUsefulElement(profile);
+  if(kind==='stock')return deepStockTypes(profile);
+  if(kind==='love')return deepLoveAnswer(profile,q);
+  if(kind==='business')return`项目宜先从${DEEP_SECTORS[element].business}中选，做轻资产、回款快、复购可查的一项；若已有经验与客户，守熟不求奇。最不合的是租金人工先压上、库存大量囤住、客户尚未落实便借钱扩张。能先收定金、交付后仍有毛利、三个月现金不断，才算这门生意真正可做。`;
+  if(kind==='jobtype')return`职业类型宜往${DEEP_SECTORS[element].business}中找，但不必硬按行业改行；真正合的是职责清楚、成果可量化、经验能复用的岗位。若新职位只有头衔，没有权限、资源和稳定报酬，仍不作升运论；同行换平台通常比同时跨行业、跨岗位更容易成。`;
+  if(kind==='careerTime'||kind==='wealthTime'){let years=deepGeneralYears(profile,kind==='careerTime'?'career':'wealth');return`${kind==='careerTime'?'职位变化、晋升或换平台':'收入抬升、回款增多或资产重新配置'}以${deepYearName(years[0].year)}较强，${deepYearName(years[1].year)}可作第二窗口。前一窗口宜主动争取，后一窗口宜把结果坐实；若只有消息而没有合同、任命或钱实际到手，便不算应验。`}
+  return'';
+}
+function deepBaseJudgment(s,topic,cfg){
+  let level=signalLevel(s),kind=deepQuestionKind(s.question,topic);
+  if(kind==='stock'){let m={good:'断：可以买，但宜选稳健类型，不宜押热点；有赚钱机会。过程：先有筛选、后有收获，波动中仍能守住。结果：按仓位和退出纪律做，可留小利，不作暴利论。',mixed:'断：可以小仓参与，不宜重仓；能赚也容易回吐。过程：机会与破耗并见，追高换股最伤。结果：守纪律可保本到小利，失控则有进无存。',bad:'断：目前不建议靠股票求快财。过程：消息多、波动重，容易先见小利后见回撤。结果：若仍重仓、追涨或加杠杆，难守本金。'};return m[level]}
+  if(kind==='love'){let marriage=/结婚|婚期|成婚|领证/.test(s.question),m={good:`断：${marriage?'婚缘可成，能把关系落到婚姻':'能遇到心上人，也有走到婚姻的可能'}。过程：先认识磨合，后定名分，整体越走越稳。结果：现实条件谈妥，关系可成。`,mixed:`断：${marriage?'有结婚机会，但不是顺着就能成':'能遇到心上人，但不是一见就定'}。过程：缘分会来，也会经过冷热与现实磨合。结果：双方同向可成，只有一方用力则止于桃花。`,bad:`断：${marriage?'近期婚事不宜硬定':'不是终身无缘，只是近段缘来得慢'}。过程：容易遇到不稳定或回避责任的人。结果：宁可晚些筛清，也不要拿短桃花充作婚缘。`};return m[level]}
+  if(kind==='business')return level==='good'?'断：可以做这类生意，熟客熟行更容易成。过程：先小后稳，回款能接上。结果：守住毛利与现金流，可以留下利润。':level==='bad'?'断：暂不宜扩大做生意。过程：成本、库存与客源难同时接上。结果：借钱铺开容易伤现金，应先收缩。':'断：生意可以做，但只能先小做。过程：有订单也有成本压力。结果：回款快则有小利，盲目扩大则忙而无财。';
+  if(kind==='jobtype'||kind==='careerTime')return level==='good'?'断：事业方向可以调整，往合适类型走较容易成。过程：先动后顺，能力能被看见。结果：职位、权限或收入至少两项能提高。':level==='bad'?'断：当前不宜盲目换行或硬争。过程：机会看着多，实际承接不足。结果：条件不清便动，容易换后仍受困。':'断：方向能换，但不宜一步跨得太大。过程：机会与压力并来。结果：同行换平台或相邻岗位更容易落稳。';
+  let j=cfg?sceneJudgment(cfg,signalLevel(s)):topicJudgment(topic,signalLevel(s));
+  return`断：${j.can}。过程：${j.flow}。结果：${j.end}。`;
+}
+function deepDecisionSet(s,kind,topic,cfg){
+  if(kind==='stock')return{
+    good:'宜只用不影响生活的闲钱，先定总仓位、单只上限和退出价，按行业—公司—估值三层筛选，分批进、分批出。赚到的钱能落袋，才叫得财；账面一时上涨不算结果。',
+    caution:'慎把“财运可用”理解成股票必涨。即使类型相合，也要核对主营利润、现金流、负债和估值；看不懂利润从哪里来，或买入理由只剩“别人说会涨”，就不应加仓。',
+    avoid:'忌借贷、融资加杠杆、满仓一只、追连续大涨，也忌亏后不断补仓只求回本。基本面转坏、价格触及预设止损或仓位影响生活时，应按纪律退出，不能拿命理替代证券判断。',
+    joy:'喜主营清楚、连续盈利、现金流充足、负债可控，买入后走势与原先逻辑相合；盈利能够分批兑现，回撤又不伤本金。少犯大错并把利润留下，就是股票财真正落地。'};
+  if(kind==='love')return{
+    good:'宜把接触放在真实生活里，看对方能否持续回应、主动安排见面，并愿意谈身份、住处、工作和未来。关系由认识到稳定要一步一步落地，不能只凭一时心动认定正缘。',
+    caution:'慎把桃花当婚缘。短期热烈、长期间歇，或只谈感受不谈现实，多半仍在缘起未定之处；遇到较强年份可以主动认识人，但要以三个月后的稳定程度判断去留。',
+    avoid:'忌长期暧昧、替对方背债、隐瞒重要事实，也忌因急着结婚而忽略失信、控制和责任逃避。对方若反复失联、拒绝公开、凡事只让你等待，再好的年份也不宜硬留。',
+    joy:'喜关系公开、来往稳定、承诺兑现，双方能共同商量钱、住处、父母与婚期。较强应期里若这些实信号连续出现，缘分才从桃花转成婚缘；只有甜言蜜语，不作婚成论。'};
+  if(kind==='business'||kind==='jobtype'||kind==='careerTime')return{
+    good:'宜守住最熟的一项能力，选择职责、客户和回报都说得清的方向。先看真实需求，再看自己能否稳定交付；结果能转成订单、职位、权限或收入，才叫事业有成。',
+    caution:'慎名头好听而权责含糊，也慎营业额、项目数或工作量增长，实际利润与收入却不增长。合作、薪酬、回款和退出条件必须写清，不能只听口头许诺。',
+    avoid:'忌裸辞后再找方向、借钱铺大摊子、同时跨行业又跨岗位，也忌为一个尚未付款的客户压货招人。投入越不可撤回，越要在合同与现金流未定前收住。',
+    joy:'喜客户真实、复购增加、回款准时，或新职位权限、资源、薪酬同时落纸。事情不必一下做大，只要每一步都能留下经验、客户与现金，便是越做越顺。'};
+  if(cfg)return{good:cfg.good,caution:cfg.caution,avoid:cfg.avoid,joy:cfg.joy};
+  let group=topicGroup(topic),sets={
+    感情:['宜看持续回应与现实担当，能谈名分、住处、钱和未来才可推进。','慎只凭心动或口头承诺，关系反复时先看对方有没有实际改变。','忌长期暧昧、隐瞒和替对方承担本不属于你的责任。','喜关系公开、联系稳定、遇事能商量，承诺逐项兑现。'],
+    财务:['宜先稳收入和现金流，再扩大投入；钱真正到账并能留下才算得财。','慎高收益而来源不清、期限不明，先核成本、回款与退出条件。','忌借钱投资、替人担保、重押单一项目和亏损后追补。','喜收入可重复、账目清楚、回款准时，结余持续增加。'],
+    事业:['宜抓最能形成职位、权限或收入的一条主线，条件落纸后再行动。','慎职责增加而职级报酬不动，也慎新机会前后说法不一。','忌受气裸辞、盲目转行和只看头衔不看实际资源。','喜上级支持、成果可见、权责相称，经验能换成真实回报。']};
+  let a=sets[group]||['宜抓住所问事情最关键的条件，先看它能否真正落地。','慎口头消息与临时变化，条件不清便不作已成论。','忌重押、借贷和任何没有退路的决定。','喜条件清楚、进展连续、成果可留，事情越做越稳。'];
+  return{good:a[0],caution:a[1],avoid:a[2],joy:a[3]};
+}
+function decisionText(s){let topic=detectTopic(s.question),cfg=sceneConfig(s.question,topic),kind=deepQuestionKind(s.question,topic);return deepDecisionSet(s,kind,topic,cfg)}
+function deepAnswerDepth(kind){
+  if(kind==='stock')return'具体落手时，只在一至两个主线行业里挑，不因一天涨跌反复换赛道；先看近三年的盈利与现金流，再看当前价格是否已经把好消息透支。买前写明为何买、错在哪里退出，卖后再计算净收益。类型合而公司差，仍然不能买；公司好而价格太贵，也只宜等。';
+  if(kind==='love')return'若现在单身，较强年份前后应扩大真实社交，不要只守在手机里等；若已经有人，就看这一年能否完成公开关系、见双方家人、商量住处与钱这几件事。年龄多为相近或心性略成熟者，职业与生活节奏较稳定；相处中以能不能共同解决现实问题，分辨短桃花与可成之缘。';
+  if(kind==='business')return'选择时把经验、客源、启动成本、毛利、回款期逐项排开，四项里有三项现成，才值得先做；只有兴趣而无客源，先小做试单。合伙要先定出资、分工、账目和退出，亲友关系不能代替合同。看似不起眼但能持续复购的项目，往往比一时热闹的新概念更能留财。实体门店还要算保本客流、租金和人工占比，线上项目要算获客成本、退货与平台抽成；这些吃掉毛利，再旺的流水也不是财。';
+  if(kind==='jobtype'||kind==='careerTime')return'求职或变动时，先比较实际到手收入、直属上级、权限、考核和三年后的能力积累。五项里至少三项比现在好，才值得动；若只是换了公司名称，旧问题仍在，便不算转顺。同行、相邻岗位或能直接复用旧经验的方向，通常比完全陌生的赛道更容易在短期做出成绩。偏管理要看有没有用人和决策权，偏技术要看成果归属与成长空间，偏销售要看客户资源、提成算法和回款责任；三者不能只看招聘名称。';
+  return'';
+}
+function finalNarrative(s,d){
+  let topic=detectTopic(s.question),cfg=sceneConfig(s.question,topic),kind=deepQuestionKind(s.question,topic),base=deepBaseJudgment(s,topic,cfg),specific=deepSpecificAnswer(s,kind);
+  if(!specific){let group=topicGroup(topic),close=topicClose(topic)||'事情须以现实条件真正落地，方可作成论。';specific=`此问只说${group}：先看能不能做，再看过程是否顺，最后只认现实结果。${close}`}
+  let limit=kind==='stock'?'以上只作传统命理与自我审视参考，不指向具体证券，也不能代替基本面、估值和持牌专业意见。':topic==='health'?'身体问题以正规检查和医生意见为准，命理不能代替诊断。':topic==='legal'?'纠纷以证据、合同和专业法律意见为准。':'';
+  return`${base}${specific}${deepAnswerDepth(kind)}${limit}`;
+}
+const DEEP_TEST_QUESTIONS_V2=[
+ {label:'股票类型',question:'我买股票适合什么行业和类型？哪些公司可以看，哪些一定要避开，最后能不能赚到钱？'},
+ {label:'正缘年份',question:'我能不能遇到心上人？哪一年最容易遇到，对方是什么样的人，可能在哪里认识？'},
+ {label:'婚姻应期',question:'我哪一年最容易结婚？这段缘分能不能把名分、住处和双方家庭安排定下来？'},
+ {label:'事业方向',question:'我适合做什么行业和工作？哪一种岗位更容易做出结果，什么时候变动比较顺？'}
+];document.querySelectorAll('.quick button').forEach((button,index)=>{let item=DEEP_TEST_QUESTIONS_V2[index];if(item){button.textContent=item.label;button.dataset.q=item.question}});
