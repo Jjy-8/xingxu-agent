@@ -18,14 +18,32 @@ function level(v,small,clear){return v>=clear?'明显':v>=small?'轻微':'未见
 function sideText(v){return v<0?'向画面左侧':v>0?'向画面右侧':'居中';}
 function topicOf(q){
   if(/感情|爱情|婚姻|对象|关系|复合|分手|结婚|恋爱|正缘|姻缘|桃花|夫妻|伴侣/.test(q))return '感情';
-  if(/事业|工作|职业|升职|创业|跳槽|岗位|公司|领导|生意/.test(q))return '事业';
-  if(/财|钱|收入|投资|股票|基金|回款|债|房产/.test(q))return '财运';
+  if(/事业|工作|职业|升职|创业|跳槽|岗位|公司|领导/.test(q))return '事业';
+  if(/财|钱|收入|投资|股票|基金|证券|个股|仓位|生意|开店|订单|回款|债|贷款|房产|种地|种田|种植|农业|庄稼|粮食|收成/.test(q))return '财运';
   if(/父母|亲情|家庭|孩子|子女|兄弟|姐妹|家人/.test(q))return '家庭';
   if(/朋友|人际|同事|合作|合伙|客户/.test(q))return '人际';
   if(/健康|身体|睡眠|疾病|疼痛|恢复/.test(q))return '健康';
   if(/考试|学业|学习|成绩|考研|考公/.test(q))return '学业';
   if(/痣|胎记|疤|伤痕|斑/.test(q))return '特征';
   return '自身';
+}
+function issueOf(q,topic){
+  if(topic==='财运'){
+    if(/股票|炒股|大盘|个股|证券|仓位|涨停|买入|卖出/.test(q))return '股票';
+    if(/基金|定投/.test(q))return '基金';
+    if(/种地|种田|种植|农业|农作|庄稼|粮食|亩|收成/.test(q))return '种植';
+    if(/生意|开店|客户|订单|回款|经营/.test(q))return '生意';
+    if(/欠款|债务|还债|借款|贷款|负债/.test(q))return '债务';
+    if(/买房|卖房|房产|住房|置业/.test(q))return '房产';
+    if(/投资|项目|合伙出资/.test(q))return '投资';
+    return '收入';
+  }
+  if(topic==='感情')return /复合|挽回|前任/.test(q)?'复合':/结婚|领证|婚期|成婚/.test(q)?'结婚':/分手|离开|要不要继续|能不能继续/.test(q)?'感情去留':/桃花|正缘|姻缘|对象/.test(q)?'缘分':'相处';
+  if(topic==='事业')return /换工作|跳槽|辞职|新工作/.test(q)?'换工作':/升职|晋升|提拔/.test(q)?'升职':/创业|自己干/.test(q)?'创业':'工作';
+  if(topic==='家庭')return /父母|长辈/.test(q)?'父母':/孩子|子女/.test(q)?'子女':/兄弟|姐妹/.test(q)?'手足':'家庭';
+  if(topic==='人际')return /合作|合伙|客户/.test(q)?'合作':'人际';
+  if(topic==='学业')return /考试|考研|考公|录取|成绩/.test(q)?'考试':'学习';
+  return topic;
 }
 
 async function getFaceLandmarker(){
@@ -224,13 +242,31 @@ var HAND_ORIGINAL={
   career:'论掌纹曰：“人纹象人贤愚，主人贫富。”盖人纹以象人智慧之贤愚，以喻聪明智慧之赚聚生财故也。',
   mark:'掌中足底生黑痣者，贵而益夫。'
 };
-function featureRelevance(topic,features,marks,gender){
+function issueGuidance(issue){
+  var rules={
+    股票:'股票属财运，重点断偏财进退与能否守住。',基金:'基金属财运，重点断此财适不适合久持。',种植:'种植属财运，重点断此业能否生财。',生意:'生意属财运，重点断经营求财能否成。',债务:'债务属财运，重点断财气能否收束、压力能否减轻。',房产:'房产属财运，重点断田宅之财能否承接。',投资:'投资属财运，重点断偏财机会能否落袋。',收入:'此问属财运，重点断求财之路与聚财能力。',复合:'此问重点断旧缘能否续接。',结婚:'此问重点断感情能否落到婚姻。','感情去留':'此问重点断这段感情宜留还是宜止。',缘分:'此问重点断正缘与桃花能否落定。',相处:'此问重点断双方能否长久相处。','换工作':'此问重点断眼下是否适合换工作。',升职:'此问重点断职位能否上升。',创业:'此问重点断是否适合自己开创事业。',工作:'此问重点断当前工作的去留与发展。',考试:'此问重点断考试能否成。',学习:'此问重点断学业能否进。'
+  };
+  return rules[issue]||'';
+}
+function issueTarget(issue){return({股票:'参与股票',基金:'持有基金',种植:'做种植求财',生意:'做这门生意',债务:'再添新债',房产:'动房产',投资:'做这项投资',收入:'继续当前求财方向',复合:'与对方复合',结婚:'推进结婚','感情去留':'继续这段感情',缘分:'推进眼前缘分',相处:'继续磨合相处','换工作':'现在换工作',升职:'主动争取升职',创业:'现在创业',工作:'继续当前工作',考试:'参加并争取这次考试',学习:'继续当前学习方向'})[issue]||'推进所问之事';}
+function photoDecision(issue,features){
+  var evidence=features.filter(function(x){return !/未见明显|当前清晰度|似有|疑似/.test(x);}).slice(0,3),joined=evidence.join('；');
+  var steady=(joined.match(/掌色偏亮|掌色较均匀|主纹较清|轮廓较稳|轮廓反差较强/g)||[]).length;
+  var strain=(joined.match(/掌色偏沉|细纹较多|明显|歪斜|偏斜|高低差/g)||[]).length;
+  var favorable=steady>strain,neutral=steady===strain;
+  var fit=issueTarget(issue);
+  var verdict=neutral?'可以考虑，但成败尚未完全定型':favorable?'比较适合，顺势推进有成象':'目前不算适合，强行推进容易多反复';
+  if(issue==='债务')verdict='不适合再添新债，宜先收束财气';
+  var advice=issue==='股票'||issue==='基金'||issue==='投资'?(favorable?'建议可以小试，见好便收，不宜贪多':'建议先缓，不宜凭一时冲动强进'):issue==='债务'?'建议先守财、减压，不建议以新债续旧债':favorable?'建议推进，但宜稳中求成':'建议暂缓，待阻力减轻后再动';
+  return ['适不适合：'+fit+'，'+verdict+'。','建议：'+advice+'。','凭什么：'+(joined?'照片中实际见到'+joined+'；这些是本次判断所依据的个人特征。':'当前照片能作依据的个体特征较少，所以只能作谨慎判断。')];
+}
+function featureRelevance(topic,issue,features,marks,gender){
   var hasFace=features.some(function(x){return /鼻部：|口部：|眉部：|眼部：/.test(x);});
   var hasNose=features.some(function(x){return /鼻部：/.test(x)&&!/未见明显/.test(x);});
   var hasMouth=features.some(function(x){return /口部/.test(x)&&!/未见明显/.test(x);});
   var hasMark=marks.length>0;
   var lead=topic==='感情'?'这次要把沟通方式、现实责任与关系稳定性放在一起看':topic==='事业'?'这次重点看表达执行、对外协作与承担责任的方式':topic==='财运'?'这次重点看取得资源、谈判表达与守住成果的方式':topic==='家庭'?'这次重点看家庭沟通、责任边界与长期相处':topic==='人际'?'这次重点看表达分寸、信任与合作边界':topic==='健康'?'外观特征不能诊断健康；只描述照片可见情况，有新生、变大、出血或不对称的痣疤应由医生检查':'这次从照片可见结构说明个人差异，不拿单一部位替代整体判断';
-  var out=[lead+'。'];
+  var out=photoDecision(issue,features);if(issueGuidance(issue))out.unshift(issueGuidance(issue));
   if(hasMouth)out.push('口部高低或偏斜与所问最直接对应的是表达方式：重要话题容易因语气、先后顺序或失言产生误解。');
   if(hasNose)out.push('鼻部偏离面中线是这张脸的个人特征之一；在传统取象里鼻部常与做事、财帛及现实承担相连，因此围绕所问应核对实际行动和责任，不能只凭口头态度下结论。');
   marks.forEach(function(x){out.push(markView(x,gender));});
@@ -258,21 +294,21 @@ function physioFeatures(results,crossMarks,manualMarks){
   }
   return features;
 }
-function renderPhysio(question,topic,results,crossMarks,manualMarks,gender){
+function renderPhysio(question,topic,issue,results,crossMarks,manualMarks,gender){
   var features=physioFeatures(results,crossMarks,manualMarks),marks=confirmedMarks(crossMarks,manualMarks);
-  var analysis=featureRelevance(topic,features,marks,gender),original=originalsFor(features,results,topic,marks,gender),html='<span class="tag">逐项识别 · 多图交叉核对</span>';
+  var analysis=featureRelevance(topic,issue,features,marks,gender),original=originalsFor(features,results,topic,marks,gender),html='<span class="tag">逐项识别 · 多图交叉核对</span>';
   html+='<h3 class="pa-title">一、你问的事情</h3><div class="pa-p">'+esc(question)+'</div>';
   html+='<h3 class="pa-title">二、照片中实际看到的个人特征</h3>'+features.map(function(x){return '<div class="pa-bullet">• '+esc(x)+'</div>';}).join('');
   crossMarks.forEach(function(x,i){if(!x.confirmed&&!(manualMarks&&manualMarks[i]))html+='<div class="pa-confirm" data-mark-index="'+i+'"><b>请本人确认</b><p>'+esc(x.text)+'实际是否有？请输入“有”或“无”。</p><div><input class="pa-confirm-input" inputmode="text" placeholder="请输入：有 或 无"><button type="button" class="pa-confirm-submit">确认</button></div><small class="pa-confirm-error" aria-live="polite"></small></div>';});
   html+='<h3 class="pa-title">三、这些特征怎样对应你的问题</h3>'+analysis.map(function(x){return '<div class="pa-p">'+esc(x)+'</div>';}).join('');
   html+='<h3 class="pa-title">四、对应原文</h3>'+original.map(function(x){return '<div class="pa-quote">'+esc(x)+'</div>';}).join('');
-  var focus=analysis.slice(1).join('')||analysis[0];
+  var focus=analysis.slice(1).join('\n')||analysis[0];
   html+='<h3 class="pa-title">五、综合回答</h3><div class="pa-p">'+esc(focus)+'</div>';
   return html;
 }
-function bindMarkConfirmation(box,question,topic,results,crossMarks,manualMarks,gender){
+function bindMarkConfirmation(box,question,topic,issue,results,crossMarks,manualMarks,gender){
   manualMarks=manualMarks||{};box.querySelectorAll('.pa-confirm').forEach(function(panel){var input=panel.querySelector('.pa-confirm-input'),button=panel.querySelector('.pa-confirm-submit'),error=panel.querySelector('.pa-confirm-error'),index=Number(panel.getAttribute('data-mark-index'));
-    function submit(){var v=String(input.value||'').trim();var yes=/^(有|是|确实有|有的)$/.test(v),no=/^(无|没有|否|确实没有|没有的)$/.test(v);if(!yes&&!no){error.textContent='请只输入“有”或“无”。';input.focus();return;}manualMarks[index]=yes?'yes':'no';box.innerHTML=renderPhysio(question,topic,results,crossMarks,manualMarks,gender);bindMarkConfirmation(box,question,topic,results,crossMarks,manualMarks,gender);}
+    function submit(){var v=String(input.value||'').trim();var yes=/^(有|是|确实有|有的)$/.test(v),no=/^(无|没有|否|确实没有|没有的)$/.test(v);if(!yes&&!no){error.textContent='请只输入“有”或“无”。';input.focus();return;}manualMarks[index]=yes?'yes':'no';box.innerHTML=renderPhysio(question,topic,issue,results,crossMarks,manualMarks,gender);bindMarkConfirmation(box,question,topic,issue,results,crossMarks,manualMarks,gender);}
     button.addEventListener('click',submit);input.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();submit();}});
   });
 }
@@ -293,7 +329,7 @@ async function handlePhysio(input){
     }
     var good=results.filter(function(x){return x.ok;});
     if(!good.length)throw new Error(results.map(function(x){return x.label+'：'+x.error;}).join('；'));
-    var askedTopic=topicOf(question),crossMarks=fuseFaceMarks(good);box.innerHTML=renderPhysio(question,askedTopic,good,crossMarks,null,gender);bindMarkConfirmation(box,question,askedTopic,good,crossMarks,null,gender);
+    var askedTopic=topicOf(question),askedIssue=issueOf(question,askedTopic),crossMarks=fuseFaceMarks(good);box.innerHTML=renderPhysio(question,askedTopic,askedIssue,good,crossMarks,null,gender);bindMarkConfirmation(box,question,askedTopic,askedIssue,good,crossMarks,null,gender);
     box.classList.add('source-personal');document.querySelector('#scanResult')?.classList.remove('show');box.scrollIntoView({behavior:'smooth',block:'start'});
   }catch(err){
     box.innerHTML='<span class="tag">识别没有完成</span><h3>请检查照片后重试</h3><p>'+esc(err&&err.message||'五官定位模型暂时无法加载')+'。不要用旧的泛化结果代替照片识别。</p>';
@@ -304,23 +340,31 @@ function domainKey(t){return({career:'career',workpeople:'career',wealth:'wealth
 function palaceFor(c,d){var n=({career:'官禄',wealth:'财帛',relation:'夫妻',timing:'迁移',family:'田宅',friendship:'交友',health:'疾厄',self:'命宫',study:'命宫'})[d]||'命宫';return(c&&c.palaces||[]).find(function(x){return x.name===n;})||(c&&c.palaces||[]).find(function(x){return x.active;});}
 function relatedPalaces(c,d){var ns=({career:['官禄','财帛','迁移'],wealth:['财帛','官禄','田宅'],relation:['夫妻','命宫','福德'],family:['田宅','父母','兄弟'],friendship:['交友','兄弟','福德'],health:['疾厄','命宫','福德'],study:['命宫','官禄','福德'],timing:['迁移','命宫','福德'],self:['命宫','福德','官禄']})[d]||['命宫','福德','官禄'];return ns.map(function(n){return(c&&c.palaces||[]).find(function(x){return x.name===n;});}).filter(Boolean);}
 function signalText(text){var a=[];if(/化禄|禄存/.test(text))a.push('资源与现实承接');if(/化权/.test(text))a.push('推动力、控制与责任');if(/化科/.test(text))a.push('沟通、规则与名誉');if(/化忌/.test(text))a.push('执念、误解或反复');if(/擎羊|陀罗|火星|铃星|地空|地劫/.test(text))a.push('冲突与损耗');return a.length?a.join('、'):'没有单一强信号，须由多宫合看';}
+function destinyDecision(issue,evidence,score){
+  var target=issueTarget(issue),suitable=score>0,unclear=score===0;
+  var verdict=unclear?'可以考虑，但现在属于吉凶并见，成象未定':suitable?'比较适合，盘中有承接之象':'目前不太适合，盘中阻力和反复较重';
+  if(issue==='债务')verdict='不适合再添新债，财气宜收不宜散';
+  var advice=issue==='债务'?'建议先守财减压，不建议以新债续旧债':suitable?'建议可以推进，但宜顺势而为、见好知止':unclear?'建议谨慎试探，不宜一次押得太重':'建议暂缓，先等阻力减轻再动';
+  return ['适不适合：'+target+'，'+verdict+'。','建议：'+advice+'。','凭什么：'+evidence+'。'];
+}
 function destinyReport(s){
-  var p=activeProfile(),c=p&&p.chart||{},t=typeof detectTopic==='function'?detectTopic(s.question):'self',d=domainKey(t),out=['一、你问的事情',s.question,'','二、这位命主与问题直接相关的个人盘面'];
+  var p=activeProfile(),c=p&&p.chart||{},askedTopic=topicOf(s.question),askedIssue=issueOf(s.question,askedTopic),specific=issueGuidance(askedIssue),basis='',score=0,t=typeof detectTopic==='function'?detectTopic(s.question):'self',d=domainKey(t),out=['一、你问的事情',s.question,'','二、这位命主与问题直接相关的个人盘面'];
   if(s.mode==='ziwei'){
     var ps=relatedPalaces(c,d),main=palaceFor(c,d),all=ps.map(function(x){return x.name+x.branch+'宫：'+x.stars+'，'+x.transform;});
-    out.push.apply(out,all.map(function(x){return '• '+x;}));out.push('');out.push('三、围绕问题逐项判断');
+    out.push.apply(out,all.map(function(x){return '• '+x;}));basis=all.join('；');score=((basis.match(/化禄|禄存|化权|化科/g)||[]).length)-((basis.match(/化忌|擎羊|陀罗|火星|铃星|地空|地劫/g)||[]).length);out.push('');out.push('三、围绕问题逐项判断');
     out.push('主宫取'+(main?main.name:'命宫')+'，不是把全盘所有内容都搬进来。'+(main?'这里见'+main.stars+'、'+main.transform+'，首先落在'+signalText(main.stars+' '+main.transform)+'。':''));
     if(ps[1])out.push(ps[1].name+'用来核对事情为什么形成；其'+ps[1].stars+'、'+ps[1].transform+'说明'+signalText(ps[1].stars+' '+ps[1].transform)+'也参与其中。');
     if(ps[2])out.push(ps[2].name+'用来核对最后怎样落到现实；其'+ps[2].stars+'、'+ps[2].transform+'使'+signalText(ps[2].stars+' '+ps[2].transform)+'成为结果能否稳定的关键。');
   }else if(s.mode==='sizhu'){
     var ps4=c.pillars||[],p4=ps4.map(function(x){return gan[x[0]]+zhi[x[1]];}).join('、'),day=ps4[2]?gan[ps4[2][0]]:'—',mb=ps4[1]?zhi[ps4[1][1]]:'—',stem=typeof hiddenStems!=='undefined'&&ps4[1]?hiddenStems[ps4[1][1]][0]:null,god=stem!=null&&ps4[2]?tenGod(ps4[2][0],stem):'—';
-    out.push('• 四柱：'+p4,'• 日主：'+day,'• 月令：'+mb+'，本气对应'+god,'','三、围绕问题逐项判断','这次以月令本气和日主关系为第一层，再把“'+s.question+'”落到'+topicOf(s.question)+'。'+god+'的作用不是一句吉凶，而是看它在此事中有没有得到生扶、制化和现实承接。');
+    basis='四柱'+p4+'，日主'+day+'，月令'+mb+'，本气为'+god;score=/正财|偏财|食神|正官|正印/.test(god)?1:/七杀|劫财|伤官/.test(god)?-1:0;out.push('• 四柱：'+p4,'• 日主：'+day,'• 月令：'+mb+'，本气对应'+god,'','三、围绕问题逐项判断','这次以月令本气和日主关系为第一层，再把“'+s.question+'”落到'+askedIssue+'。'+god+'的作用不是一句吉凶，而是看它在此事中有没有得到生扶、制化和现实承接。');
   }else{
-    var q=c.qimen||{};out.push('• 局势：阳遁'+(q.bureau||'—')+'局','• 值门：'+(q.gate||'—'),'• 值星：'+(q.star||'—'),'','三、围绕问题逐项判断','门先定这件事的性质，星再看环境表现；此问只围绕'+topicOf(s.question)+'，不把出生终身局冒充即时问事盘，也不凭空编具体日期。');
+    var q=c.qimen||{};basis='阳遁'+(q.bureau||'—')+'局，值门'+(q.gate||'—')+'，值星'+(q.star||'—');score=/开|生|休/.test(q.gate||'')?1:/死|惊|伤|杜/.test(q.gate||'')?-1:0;out.push('• 局势：阳遁'+(q.bureau||'—')+'局','• 值门：'+(q.gate||'—'),'• 值星：'+(q.star||'—'),'','三、围绕问题逐项判断','门先定这件事的性质，星再看环境表现；此问只围绕'+askedIssue+'，不把出生终身局冒充即时问事盘，也不凭空编具体日期。');
   }
+  if(specific)out.push('• '+specific);out.push.apply(out,destinyDecision(askedIssue,basis||'当前命盘所列主宫、辅宫与现实承接信号',score).map(function(x){return '• '+x;}));
   out.push('','四、对应原文');
   var original=window.XingxuSourceText&&typeof window.XingxuSourceText.select==='function'?window.XingxuSourceText.select(s):'';out.push(original,'','五、综合回答');
-  out.push('这次回答的落点是：先看上面列出的个人盘面是否与现实中的行为、资源和责任相互印证。盘面有助力而现实没有行动，不能直接算成；盘面有冲突而当事人已经把边界、责任和沟通处理清楚，也不能只凭一颗星下绝对结论。'+(/什么时候|何时|哪年|哪月|婚期/.test(s.question)?'你问到时间，必须有对应的大运、流年、流月或即时起局资料；当前资料不足时不编日期。':''));
+  out.push(destinyDecision(askedIssue,basis||'当前命盘所列主宫、辅宫与现实承接信号',score).join('\n')+(/什么时候|何时|哪年|哪月|婚期/.test(s.question)?'\n你问到时间，必须有对应的大运、流年、流月或即时起局资料；当前资料不足时不编日期。':''));
   return out.join('\n');
 }
 function installDestiny(){
@@ -334,5 +378,5 @@ function installDestiny(){
 var style=document.createElement('style');
 style.textContent='.source-personal .pa-title,.question-answer .pa-title{display:table!important;margin:22px 0 10px!important;font:700 17px/1.6 var(--serif)!important;color:inherit!important;border-bottom:4px solid #bcecf0}.pa-p{margin:7px 0;line-height:2;white-space:pre-line}.pa-bullet{margin:8px 0;padding-left:12px;line-height:1.95}.pa-quote{margin:10px 0;padding:14px 16px;border-left:3px solid #7dbfc3;background:#eef8f7;line-height:2;white-space:pre-line}.pa-confirm{margin:14px 0;padding:14px 16px;border:1px solid #dccb9e;border-radius:12px;background:#fff9e9}.pa-confirm b{font:700 14px/1.6 var(--serif)}.pa-confirm p{margin:6px 0 10px;line-height:1.8}.pa-confirm>div{display:flex;gap:8px}.pa-confirm-input{min-width:0;flex:1;border:1px solid #cfd8d2;border-radius:8px;padding:9px 10px;background:#fff}.pa-confirm-submit{border:0;border-radius:8px;padding:9px 16px;background:var(--green);color:#fff}.pa-confirm-error{display:block;min-height:18px;margin-top:6px;color:#a24640}.pa-gap{height:5px}.question-answer.source-personal>.tag{display:inline-block!important}.question-answer.source-personal>h3{display:table!important}@media(max-width:680px){.source-personal .pa-title,.question-answer .pa-title{font-size:16px}.pa-p,.pa-bullet,.pa-quote{line-height:1.9}}';
 document.head.appendChild(style);installDestiny();
-window.XingxuPersonalAnalysis={version:'5.2',handlePhysio:handlePhysio,analyzeFace:analyzeFace,destinyReport:destinyReport};
+window.XingxuPersonalAnalysis={version:'5.3',handlePhysio:handlePhysio,analyzeFace:analyzeFace,destinyReport:destinyReport};
 })();
