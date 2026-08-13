@@ -45,11 +45,19 @@ function avgPts(a,ids){var x=0,y=0;ids.forEach(function(i){x+=pt(a,i).x;y+=pt(a,
 function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
 function rotated(p,o,ang){var x=p.x-o.x,y=p.y-o.y,c=Math.cos(ang),s=Math.sin(ang);return{x:x*c-y*s,y:x*s+y*c};}
 function visibleName(x,y){
-  var side=x<.46?'画面左侧':x>.54?'画面右侧':'面部中央';
-  var band=y<.26?'额部':y<.43?'眉眼附近':y<.62?'颧颊或鼻部附近':y<.78?'口周或面颊下部':'下巴附近';
+  var side=x<.46?'照片左侧':x>.54?'照片右侧':'面部中央';
+  var band=markZone(x,y).name;
   return side+band;
 }
-function visibleBand(y){return y<.26?'额部':y<.43?'眉眼附近':y<.62?'颧颊或鼻部附近':y<.78?'口周或面颊下部':'下巴附近';}
+function markZone(x,y){
+  var dx=Math.abs(x-.5);
+  if(y<.26)return{key:'forehead',name:'额部'};
+  if(y<.43)return dx>.30?{key:'temple',name:'眼尾至发际间'}:dx<.09?{key:'glabella',name:'两眉之间'}:{key:'brow',name:'眉眼部'};
+  if(y<.56)return dx<.12?{key:'nose',name:'鼻部'}:dx>.31?{key:'temple',name:'眼尾至发际间'}:{key:'underEye',name:'眼下泪堂'};
+  if(y<.73)return dx<.16?{key:'mouth',name:'人中或口周'}:{key:'cheek',name:'面颊'};
+  return dx<.24?{key:'chin',name:'下巴'}:{key:'lowerCheek',name:'下颊'};
+}
+function visibleBand(x,y){return markZone(x,y).name;}
 function imageCanvas(img,size){
   var c=document.createElement('canvas'),ctx=c.getContext('2d',{willReadFrequently:true});
   c.width=size;c.height=size;
@@ -84,10 +92,10 @@ function markCandidates(img,lm){
     while(q.length){var k=q.pop(),yy=Math.floor(k/w),xx=k-yy*w;n++;sx+=xx;sy+=yy;scoreSum+=strengthMap[k];loX=Math.min(loX,xx);hiX=Math.max(hiX,xx);loY=Math.min(loY,yy);hiY=Math.max(hiY,yy);
       for(var oy=-1;oy<=1;oy++)for(var ox=-1;ox<=1;ox++){var X=xx+ox,Y=yy+oy,j=Y*w+X;if(X>=0&&X<w&&Y>=0&&Y<h&&mask[j]&&!seen[j]){seen[j]=1;q.push(j);}}
     }
-    if(n>=4&&n<=115){var bw=hiX-loX+1,bh=hiY-loY+1,aspect=Math.max(bw,bh)/Math.max(1,Math.min(bw,bh)),mean=scoreSum/n,shape=aspect<=2.4?.16:aspect>3&&n>10?.09:0,confidence=Math.min(1,Math.max(0,(mean-27)/35)*.62+Math.min(1,n/13)*.22+shape);out.push({n:n,x:(sx/n-minX)/(maxX-minX),y:(sy/n-minY)/(maxY-minY),aspect:aspect,confidence:confidence,clarity:clarity});}
+    if(n>=4&&n<=115){var bw=hiX-loX+1,bh=hiY-loY+1,aspect=Math.max(bw,bh)/Math.max(1,Math.min(bw,bh)),mean=scoreSum/n,shape=aspect<=2.4?.16:aspect>3&&n>10?.09:0,confidence=Math.min(1,Math.max(0,(mean-27)/35)*.62+Math.min(1,n/13)*.22+shape),nx=(sx/n-minX)/(maxX-minX),ny=(sy/n-minY)/(maxY-minY);if(markZone(nx,ny).key!=='brow')out.push({n:n,x:nx,y:ny,aspect:aspect,confidence:confidence,clarity:clarity});}
   }
   return out.sort(function(a,b){return b.confidence-a.confidence;}).slice(0,4).map(function(c){
-    c.kind=c.aspect>3&&c.n>10?'line':'spot';c.band=visibleBand(c.y);c.clear=c.clarity>=.66&&c.confidence>=.68;
+    c.kind=c.aspect>3&&c.n>10?'line':'spot';c.zone=markZone(c.x,c.y);c.band=c.zone.name;c.clear=c.clarity>=.66&&c.confidence>=.68;
     c.type=c.kind==='line'?'线状疤痕或褶痕':'痣、色斑或胎记色点';
     c.text=(c.clear?'清楚可见的':'疑似')+c.type+'：'+visibleName(c.x,c.y)+(c.clear?'（本张照片边界较清楚）':'（需结合其他角度或放大原图复核）');
     return c;
@@ -107,11 +115,11 @@ function fuseFaceMarks(results){
     if(!g){g={kind:o.mark.kind,y:o.mark.y,items:[]};groups.push(g);}g.items.push(o);g.y=g.items.reduce(function(s,z){return s+z.mark.y;},0)/g.items.length;
   });
   return groups.map(function(g){
-    var best=g.items.slice().sort(function(a,b){return (b.mark.clear-a.mark.clear)||(b.mark.confidence-a.mark.confidence);})[0],labels=Array.from(new Set(g.items.map(function(x){return x.label;}))),clear=g.items.some(function(x){return x.mark.clear;}),repeated=labels.length>=2;
-    var noun=g.kind==='line'?'线状疤痕样标记':'痣样色点',where=best.label==='正脸'?visibleName(best.mark.x,best.mark.y):best.mark.band;
-    if(clear)return{confirmed:true,kind:g.kind,text:'单张清楚确认：'+best.label+'在'+where+'清楚显示'+noun+'，可直接作为该人的可见特征；其他角度只用于补充位置。'};
-    if(repeated)return{confirmed:true,kind:g.kind,text:'多图交叉确认：'+labels.join('与')+'在相近的'+best.mark.band+'重复出现同类标记，判定该部位有'+noun+'，不是只凭一张模糊照片下结论。'};
-    return{confirmed:false,kind:g.kind,text:'仅单张疑似：'+best.label+'在'+where+'出现'+noun+'候选，但其他照片没有形成同位置印证，暂不判定为已有痣或疤痕。'};
+    var best=g.items.slice().sort(function(a,b){return Number(b.label==='正脸')-Number(a.label==='正脸')||(b.mark.clear-a.mark.clear)||(b.mark.confidence-a.mark.confidence);})[0],labels=Array.from(new Set(g.items.map(function(x){return x.label;}))),clear=g.items.some(function(x){return x.mark.clear;}),repeated=labels.length>=2;
+    var noun=g.kind==='line'?'疤痕':'痣或胎记',where=best.label==='正脸'?visibleName(best.mark.x,best.mark.y):best.mark.band,base={kind:g.kind,zone:(best.mark.zone||markZone(best.mark.x,best.mark.y)).key,where:where,x:best.mark.x,y:best.mark.y,pointable:best.label==='正脸',labels:labels};
+    if(clear)return Object.assign(base,{confirmed:true,text:where+'有'+noun+'。'});
+    if(repeated)return Object.assign(base,{confirmed:true,text:best.mark.band+'有'+noun+'。'});
+    return Object.assign(base,{confirmed:false,text:where+'似有'+noun+'。'});
   }).sort(function(a,b){return Number(b.confirmed)-Number(a.confirmed);});
 }
 async function analyzeFace(img,label){
@@ -127,7 +135,6 @@ async function analyzeFace(img,label){
   var eyeDiff=(rotated(re,eyeMid,ang).y-rotated(le,eyeMid,ang).y)/inter;
   var frontal=yaw<.20&&Math.abs(roll*180/Math.PI)<8;
   var features=[];
-  features.push('拍摄状态：'+(frontal?'正脸角度可用于比较':'头部角度或透视偏差较大，以下左右差异只能作疑似特征'));
   features.push('鼻部：'+level(Math.abs(noseDev),.018,.038)+(Math.abs(noseDev)>=.018?'，鼻尖相对面中线'+sideText(noseDev):'偏斜'));
   if(Math.abs(mouthSlope)>=.035)features.push('口部：'+level(Math.abs(mouthSlope),.035,.075)+'歪斜，'+(mouthSlope>0?'画面左侧嘴角较高、右侧较低':'画面右侧嘴角较高、左侧较低'));
   else features.push('口部：未见明显嘴角高低差');
@@ -161,33 +168,73 @@ function analyzeHand(img,label){
 var FACE_ORIGINAL={
   nose:'准头尖斜，心事勾加。鼻梁不直，欺诈未息。',
   mouth:'从正面来看，左右唇不平均，比如左半边比右半边薄，或视觉上感觉此人的嘴斜向脸颊的一边，生有这种嘴的人，婚姻容易出问题。因为这种嘴相容易在相处过程中失言。夫妻不是爱吵架，就是会离异。',
-  mark:'左右眼睛后方到发际间的两个小区域，也称为夫妻宫。这个部位反映了一个人的婚姻状况。如果这个区域有伤，或者有灰黑的痣，不是感情的路不平顺，就是感情走上三岔路。',
   whole:'面相，不仅指的是五官、三停、十二宫，当然它们很重要，但是并不是全部。一个人的精神面貌也是面相中必不可少的部分。古语中早就有“看相先看神”的说法。'
 };
+var FACE_MARK_ORIGINAL={
+  forehead:'额头是面相中最上方的部位，主要反映一个人的社会地位和官运。',
+  temple:'左右眼睛后方到发际间的两个小区域，也称为夫妻宫。这个部位反映了一个人的婚姻状况。如果这个区域有伤，或者有灰黑的痣，不是感情的路不平顺，就是感情走上三岔路。',
+  glabella:'痣的位置在⑬而且痣颜色为红色的人官运亨通。',
+  brow:'眉为君、眼为臣、眉为一面之表，目为一身之精。',
+  underEye:'两眼下泪堂部位生有黑痣的人，家中必定有出家念佛诵经的和尚道士。',
+  nose:'鼻子上有横纹，会有危险的事。',
+  mouth:'痣的位置在㊸的人会搬弄是非，多嘴长舌。',
+  cheek:'痣的位置在㉞的人具有一定领导力和破坏力。',
+  lowerCheek:'痣的位置在㊹的人会得到意想不到的财富。',
+  chin:'痣的位置在㊷的人，应多留心与下属仆从之间的关系。'
+};
+var MALE_MOLE_POINTS=[
+  [1,.50,.14,'痣的位置在①的人如痣的颜色红为吉相。'],[2,.60,.10,'痣的位置在②的人性情暴躁。'],[3,.39,.10,'痣的位置在③的人对父亲运势不利。'],[4,.66,.10,'痣的位置在④的人有较强的权利欲，喜欢做官，会往上爬。'],[5,.33,.10,'痣的位置在⑤的人多为工作狂。'],[6,.72,.10,'痣的位置在⑥的人为大富之相，气色好更佳。'],[7,.27,.10,'痣的位置在⑦且色红的人为大吉之相。'],[8,.78,.10,'痣的位置在⑧的人终年在外奔波羁旅。'],[9,.20,.10,'痣的位置在⑨的人，如痣为红色，有财运，经营好的话财源滚滚。'],[10,.84,.10,'痣的位置在⑩的人不宜登山爬高，也不宜从事带冒险的活动，谨防有性命危险。'],[11,.14,.10,'痣的位置在⑪的人属坏相，为人性情多孤僻狭隘。'],[12,.08,.12,'痣的位置在⑫的人如果痣的色泽很好，就会财运亨通，为大富之相。'],
+  [13,.50,.34,'痣的位置在⑬而且痣颜色为红色的人官运亨通。'],[14,.43,.34,'痣的位置在⑭的人大手大脚，为散财之相。'],[15,.59,.30,'痣的位置在⑮而且痣颜色为红色的人可以为官。'],[16,.40,.28,'痣的位置在⑯的人生性残忍、凶狠。'],[17,.64,.29,'痣的位置在⑰的人为大吉之相。'],[18,.35,.30,'痣的位置在⑱的人低调，是富有之相。'],[19,.70,.29,'痣的位置在⑲的人凶恶。'],[20,.29,.30,'痣的位置在⑳的人易遭厄运，为不吉之痣。'],[21,.80,.32,'痣的位置在㉑的人，为人情绪化，这是凶痣。'],[22,.23,.30,'痣的位置在㉒的人，有官运。'],[23,.17,.30,'痣的位置在㉓㉖的人凶恶。'],[24,.10,.32,'痣的位置在㉔的人运势起伏大。'],
+  [25,.59,.50,'痣的位置在㉕的人凶狠。'],[26,.41,.50,'痣的位置在㉓㉖的人凶恶。'],[27,.65,.50,'痣的位置在㉗的人兄弟运势不佳。'],[28,.36,.50,'痣的位置在㉘的人父亲运势不佳。'],[29,.30,.50,'痣的位置在㉙的人女儿运势不佳。'],[30,.72,.50,'痣的位置在㉚的人妻子运势不佳。'],[31,.78,.50,'痣的位置在㉛的人在后代中多男少女。'],[32,.22,.50,'痣的位置在㉜的人儿子运势不佳。'],[33,.85,.50,'痣的位置在㉝㊺㊼的人是吉利之相。'],[34,.15,.50,'痣的位置在㉞的人具有一定领导力和破坏力。'],
+  [35,.17,.70,'痣的位置在㉟㊱的人游泳、乘船时要格外注意自身安全。'],[36,.24,.70,'痣的位置在㉟㊱的人游泳、乘船时要格外注意自身安全。'],[37,.31,.70,'痣的位置在㊲的人为少财之相。'],[38,.47,.84,'痣的位置在㊳的人多是有口福的人，一生有酒食。'],[39,.40,.84,'痣的位置在㊴的人是吃喝不愁之相。'],[40,.52,.84,'痣的位置在㊵的人少田宅。'],[41,.58,.84,'痣的位置在㊶的人一生贫困，为饿死之相。'],[42,.64,.84,'痣的位置在㊷的人，应多留心与下属仆从之间的关系。'],[43,.70,.84,'痣的位置在㊸的人会搬弄是非，多嘴长舌。'],[44,.80,.76,'痣的位置在㊹㊻的人会得到意想不到的财富。'],[45,.03,.26,'痣的位置在㉝㊺㊼的人是吉利之相。'],[46,.94,.63,'痣的位置在㊹㊻的人会得到意想不到的财富。'],[47,.63,.95,'痣的位置在㉝㊺㊼的人是吉利之相。'],[48,.38,.95,'痣的位置在㊽的人为显贵之相，多有较高地位。'],[49,.95,.26,'痣的位置在㊾的人为大富之相，多有钱财。'],[50,.06,.63,'痣的位置在㊿的人，能孝顺父母，尊敬长辈。']
+];
+var FEMALE_MOLE_POINTS=[
+  [1,.25,.09,'痣的位置在①的女性是大贵之相，多能因夫显贵。'],[2,.33,.09,'痣的位置在②的女性一生中婚姻多变，结婚数次。'],[3,.41,.09,'痣的位置在③的女性会影响父母运势。'],[4,.48,.09,'痣的位置在④的女性多为勤俭持家之人。'],[5,.60,.09,'痣的位置在⑤的女性个人婚姻运势多不顺。'],[6,.64,.20,'痣的位置在⑥的女性遇事多牵连亲人。'],[7,.66,.09,'痣的位置在⑦的女性，父亲、丈夫的运势不佳。'],[8,.73,.09,'痣的位置在⑧的女性，一旦嫁到外地就会变得多愁善感。'],[9,.80,.09,'痣的位置在⑨的女性会让爱人运势不佳。'],[10,.86,.09,'痣的位置在⑩的女性与孩子的缘分浅。'],
+  [11,.50,.28,'痣的位置在⑪的女性，个人财运不旺。'],[12,.10,.32,'痣的位置在⑫的女性是吉利之相。'],[13,.22,.32,'痣的位置在⑬的女性，常要忍受分离之苦。'],[14,.29,.32,'痣的位置在⑭的女性对丈夫事业有好的帮助。'],[15,.36,.32,'痣的位置在⑮的女性有违法的可能。'],[16,.60,.33,'痣的位置在⑯的女性适合从事纺织业。'],[17,.65,.32,'痣的位置在⑰的女性，多为“孟母”式人物，对培养和教育后代很有办法。'],[18,.71,.32,'痣的位置在⑱的女性为贵夫之相。'],[19,.78,.32,'痣的位置在⑲的女性对丈夫的事业各方面都起不了好作用。'],[20,.85,.32,'痣的位置在⑳的女性为长命之相。'],
+  [21,.50,.49,'痣的位置在㉑的女性，居家在外时要谨防火灾。'],[22,.60,.52,'痣的位置在㉒的女性多为自私自利之人。'],[23,.43,.53,'痣的位置在㉓的女性是多女少男之相。'],[24,.67,.52,'痣的位置在㉔的女性多为儿子操心。'],[25,.81,.52,'痣的位置在㉕的女性多与人暧昧，感情上优柔寡断。'],[26,.74,.52,'痣的位置在㉖的女性多因丈夫而伤心。'],[27,.29,.52,'痣的位置在㉗的女性多为吉利百顺之人。'],[28,.35,.52,'痣的位置在㉘的女性活泼开朗。'],[29,.20,.52,'痣的位置在㉙的女性多有不良嗜好。'],[30,.43,.48,'痣的位置在㉚的女性，虽然时常碰上倒霉事但多能逢凶化吉。'],[31,.24,.70,'痣的位置在㉛的女性心眼小。'],[32,.33,.70,'痣的位置在㉜的女性善妒。'],[33,.42,.69,'痣的位置在㉝的女性易遭水厄。'],[34,.50,.73,'痣的位置在㉞的女性多为生双胞胎之相。'],[35,.59,.69,'痣的位置在㉟的女性六亲疏远。'],[36,.66,.69,'痣的位置在㊱的女性喜欢搬弄是非。'],[37,.86,.67,'痣的位置在㊲的女性疼爱并尊重丈夫，多为贤妻良母的类型。'],[38,.74,.69,'痣的位置在㊳的女性会对丈夫的事业运势产生不良影响。'],[39,.08,.55,'痣的位置在㊴的女性头脑非常聪明。'],[40,.18,.78,'痣的位置在㊵的女性为水厄之相。'],[41,.25,.78,'痣的位置在㊶的女性一生平淡。'],[42,.50,.85,'痣的位置在㊷的女性不善理家，少田宅。'],[43,.73,.84,'痣的位置在㊸的女性会以貌取人。'],[44,.28,.96,'痣的位置在㊹的女性多为大贵之相。'],[45,.50,1.04,'痣的位置在㊺的女性多对丈夫不好。'],[46,.70,.96,'痣的位置在㊻的女性不懂善待自己。']
+];
+function confirmedMarks(crossMarks,manualMarks){return crossMarks.filter(function(x,i){return x.confirmed||(manualMarks&&manualMarks[i]==='yes');});}
+function nearestMolePoint(x,gender){
+  var points=gender==='女'?FEMALE_MOLE_POINTS:gender==='男'?MALE_MOLE_POINTS:null;if(!points||!x.pointable)return null;
+  if(x.x<.46||x.x>.54){
+    if(x.zone==='temple'||x.zone==='cheek'||x.zone==='lowerCheek')return null;
+    x=Object.assign({},x,{x:1-x.x});
+  }
+  return points.reduce(function(best,p){var score=Math.pow((x.x==null?.5:x.x)-p[1],2)+1.25*Math.pow((x.y==null?.5:x.y)-p[2],2);return !best||score<best.score?{id:p[0],text:p[3],score:score}:best;},null);
+}
+function markOriginal(x,gender){
+  if(x.kind==='line')return '五官如有破损是不吉利的。';
+  var point=nearestMolePoint(x,gender);if(point)return point.text;
+  var zone=x.zone||'cheek';
+  return FACE_MARK_ORIGINAL[zone]||FACE_MARK_ORIGINAL.cheek;
+}
+function markView(x,gender){
+  var noun=x.kind==='line'?'疤痕':'痣或胎记',where=x.where||({forehead:'额部',temple:'眼尾至发际间',glabella:'两眉之间',brow:'眉眼部',underEye:'眼下泪堂',nose:'鼻部',mouth:'人中或口周',cheek:'面颊',lowerCheek:'下颊',chin:'下巴'}[x.zone]||'面部');
+  return where+'确认有'+noun+'。按该位置对应的原文看：'+markOriginal(x,gender);
+}
 var HAND_ORIGINAL={
   whole:'相由心生，手相亦然，故相手可以推测心性也！夫，察人之心隆，观纹见掌，知掌地则知心地。掌平，心亦平。纹正，心亦正；纹横则性横。纹浅，机亦浅；纹深，机亦深。纹多，心绪多；纹少，机关少。',
   relation:'从手相看婚姻，一般都是先看婚姻线。婚姻线，顾名思义其代表的意义总离不开结婚、嫁娶之事。自然，要想详细地了解你的婚姻信息，除此线外尚需参考其他部分，绝不可因婚姻线不好，就一口断定结婚运欠佳。',
   career:'论掌纹曰：“人纹象人贤愚，主人贫富。”盖人纹以象人智慧之贤愚，以喻聪明智慧之赚聚生财故也。',
   mark:'掌中足底生黑痣者，贵而益夫。'
 };
-function featureRelevance(topic,features,markConfirmed){
-  var hasFace=features.some(function(x){return /鼻部：|口部：|眉部：|眼部：|拍摄状态：/.test(x);});
+function featureRelevance(topic,features,marks,gender){
+  var hasFace=features.some(function(x){return /鼻部：|口部：|眉部：|眼部：/.test(x);});
   var hasNose=features.some(function(x){return /鼻部：/.test(x)&&!/未见明显/.test(x);});
   var hasMouth=features.some(function(x){return /口部/.test(x)&&!/未见明显/.test(x);});
-  var hasMark=!!markConfirmed||features.some(function(x){return /单张清楚确认|多图交叉确认|本人确认：.*确实有/.test(x);});
+  var hasMark=marks.length>0;
   var lead=topic==='感情'?'这次要把沟通方式、现实责任与关系稳定性放在一起看':topic==='事业'?'这次重点看表达执行、对外协作与承担责任的方式':topic==='财运'?'这次重点看取得资源、谈判表达与守住成果的方式':topic==='家庭'?'这次重点看家庭沟通、责任边界与长期相处':topic==='人际'?'这次重点看表达分寸、信任与合作边界':topic==='健康'?'外观特征不能诊断健康；只描述照片可见情况，有新生、变大、出血或不对称的痣疤应由医生检查':'这次从照片可见结构说明个人差异，不拿单一部位替代整体判断';
   var out=[lead+'。'];
   if(hasMouth)out.push('口部高低或偏斜与所问最直接对应的是表达方式：重要话题容易因语气、先后顺序或失言产生误解，因此回答不能只说“感情/事业一般”，而要把沟通这一项单独列为关键点。');
   if(hasNose)out.push('鼻部偏离面中线是这张脸的个人特征之一；在传统取象里鼻部常与做事、财帛及现实承担相连，因此围绕所问应核对实际行动和责任，不能只凭口头态度下结论。');
-  if(hasMark)out.push('照片中出现特殊标记候选，必须先按具体位置解释；若位于眼尾夫妻位、鼻部或口周，才分别关联感情、现实承担或表达，不能把所有痣和疤套成同一句话。');
-  if(!hasNose&&!hasMouth&&!hasMark)out.push(hasFace?'当前清晰度下没有出现足以单独下结论的鼻口偏斜或特殊标记，回答应以实际看清的整体结构为主，不能凭空补出痣、胎记或疤痕。':'当前手掌照片没有检出边界足够明确的特殊标记，回答只能使用实际看清的掌色、纹理与轮廓，不能凭空补出痣、胎记或疤痕。');
+  marks.forEach(function(x){out.push(markView(x,gender));});
   return out;
 }
-function originalsFor(features,results,topic,markConfirmed){
+function originalsFor(features,results,topic,marks,gender){
   var a=[],hasFace=results.some(function(x){return /脸$/.test(x.label)||x.label==='正脸';}),hasHand=results.some(function(x){return /掌$/.test(x.label);});
-  if(hasFace){a.push(FACE_ORIGINAL.whole);if(features.some(function(x){return /鼻部：/.test(x)&&!/未见明显/.test(x);}))a.push(FACE_ORIGINAL.nose);if(features.some(function(x){return /口部/.test(x)&&!/未见明显/.test(x);}))a.push(FACE_ORIGINAL.mouth);if(markConfirmed)a.push(FACE_ORIGINAL.mark);}
+  if(hasFace){a.push(FACE_ORIGINAL.whole);if(features.some(function(x){return /鼻部：/.test(x)&&!/未见明显/.test(x);}))a.push(FACE_ORIGINAL.nose);if(features.some(function(x){return /口部/.test(x)&&!/未见明显/.test(x);}))a.push(FACE_ORIGINAL.mouth);marks.forEach(function(x){a.push(markOriginal(x,gender));});}
   if(hasHand){a.push(HAND_ORIGINAL.whole);if(topic==='感情')a.push(HAND_ORIGINAL.relation);if(topic==='事业'||topic==='财运')a.push(HAND_ORIGINAL.career);if(features.some(function(x){return /疑似痣|疑似线状/.test(x);}))a.push(HAND_ORIGINAL.mark);}
-  return a;
+  return a.filter(function(x,i){return x&&a.indexOf(x)===i;});
 }
 function physioFeatures(results,crossMarks,manualMarks){
   var features=[];
@@ -197,36 +244,34 @@ function physioFeatures(results,crossMarks,manualMarks){
   });});
   var faces=results.filter(function(r){return r.ok&&/脸$/.test(r.label);});
   if(faces.length){
-    if(!crossMarks.length)features.push((faces.length>1?'多图核对':'单图核对')+'：当前清晰度下未检出痣、胎记或疤痕候选。');
     crossMarks.forEach(function(x,i){
       if(x.confirmed)features.push(x.text);
-      else if(manualMarks&&manualMarks[i]==='yes')features.push('本人确认：'+x.text.replace(/^仅单张疑似：/,'')+'；该位置确实有'+(x.kind==='line'?'疤痕样标记':'痣或胎记色点')+'，后续按已确认特征采用。');
-      else if(manualMarks&&manualMarks[i]==='no')features.push('本人确认：'+x.text.replace(/^仅单张疑似：/,'')+'；该位置实际没有痣、胎记或疤痕，后续不采用该候选。');
-      else features.push(x.text);
+      else if(manualMarks&&manualMarks[i]==='yes')features.push((x.where||'该位置')+'有'+(x.kind==='line'?'疤痕':'痣或胎记')+'。');
+      else if(!(manualMarks&&manualMarks[i]==='no'))features.push(x.text);
     });
   }
   return features;
 }
-function renderPhysio(question,topic,results,crossMarks,manualMarks){
-  var features=physioFeatures(results,crossMarks,manualMarks),markConfirmed=crossMarks.some(function(x,i){return x.confirmed||(manualMarks&&manualMarks[i]==='yes');});
-  var analysis=featureRelevance(topic,features,markConfirmed),original=originalsFor(features,results,topic,markConfirmed),html='<span class="tag">逐项识别 · 多图交叉核对</span>';
+function renderPhysio(question,topic,results,crossMarks,manualMarks,gender){
+  var features=physioFeatures(results,crossMarks,manualMarks),marks=confirmedMarks(crossMarks,manualMarks);
+  var analysis=featureRelevance(topic,features,marks,gender),original=originalsFor(features,results,topic,marks,gender),html='<span class="tag">逐项识别 · 多图交叉核对</span>';
   html+='<h3 class="pa-title">一、你问的事情</h3><div class="pa-p">'+esc(question)+'</div>';
   html+='<h3 class="pa-title">二、照片中实际看到的个人特征</h3>'+features.map(function(x){return '<div class="pa-bullet">• '+esc(x)+'</div>';}).join('');
-  crossMarks.forEach(function(x,i){if(!x.confirmed&&!(manualMarks&&manualMarks[i]))html+='<div class="pa-confirm" data-mark-index="'+i+'"><b>照片仍无法确定，请本人确认</b><p>'+esc(x.text)+'<br>这个位置实际是否有痣、胎记或疤痕？请输入“有”或“无”。</p><div><input class="pa-confirm-input" inputmode="text" placeholder="请输入：有 或 无"><button type="button" class="pa-confirm-submit">确认</button></div><small class="pa-confirm-error" aria-live="polite"></small></div>';});
+  crossMarks.forEach(function(x,i){if(!x.confirmed&&!(manualMarks&&manualMarks[i]))html+='<div class="pa-confirm" data-mark-index="'+i+'"><b>请本人确认</b><p>'+esc(x.text)+'实际是否有？请输入“有”或“无”。</p><div><input class="pa-confirm-input" inputmode="text" placeholder="请输入：有 或 无"><button type="button" class="pa-confirm-submit">确认</button></div><small class="pa-confirm-error" aria-live="polite"></small></div>';});
   html+='<h3 class="pa-title">三、这些特征怎样对应你的问题</h3>'+analysis.map(function(x){return '<div class="pa-p">'+esc(x)+'</div>';}).join('');
   html+='<h3 class="pa-title">四、对应原文</h3>'+original.map(function(x){return '<div class="pa-quote">'+esc(x)+'</div>';}).join('');
   var focus=analysis.slice(1).join('')||analysis[0];
-  html+='<h3 class="pa-title">五、综合回答</h3><div class="pa-p">这次结论只建立在上面明确列出的可见特征上。最需要抓住的是：'+esc(focus)+'照片角度、镜像和光线会改变左右判断；凡写有“疑似”或“需复核”的特征，都不能当成已经确认。</div>';
+  html+='<h3 class="pa-title">五、综合回答</h3><div class="pa-p">'+esc(focus)+'</div>';
   return html;
 }
-function bindMarkConfirmation(box,question,topic,results,crossMarks,manualMarks){
+function bindMarkConfirmation(box,question,topic,results,crossMarks,manualMarks,gender){
   manualMarks=manualMarks||{};box.querySelectorAll('.pa-confirm').forEach(function(panel){var input=panel.querySelector('.pa-confirm-input'),button=panel.querySelector('.pa-confirm-submit'),error=panel.querySelector('.pa-confirm-error'),index=Number(panel.getAttribute('data-mark-index'));
-    function submit(){var v=String(input.value||'').trim();var yes=/^(有|是|确实有|有的)$/.test(v),no=/^(无|没有|否|确实没有|没有的)$/.test(v);if(!yes&&!no){error.textContent='请只输入“有”或“无”。';input.focus();return;}manualMarks[index]=yes?'yes':'no';box.innerHTML=renderPhysio(question,topic,results,crossMarks,manualMarks);bindMarkConfirmation(box,question,topic,results,crossMarks,manualMarks);}
+    function submit(){var v=String(input.value||'').trim();var yes=/^(有|是|确实有|有的)$/.test(v),no=/^(无|没有|否|确实没有|没有的)$/.test(v);if(!yes&&!no){error.textContent='请只输入“有”或“无”。';input.focus();return;}manualMarks[index]=yes?'yes':'no';box.innerHTML=renderPhysio(question,topic,results,crossMarks,manualMarks,gender);bindMarkConfirmation(box,question,topic,results,crossMarks,manualMarks,gender);}
     button.addEventListener('click',submit);input.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();submit();}});
   });
 }
 async function handlePhysio(input){
-  var question=String(input.question||'').trim(),mode=input.mode||'hand',images=input.images||{},box=document.querySelector('#questionAnswer');
+  var question=String(input.question||'').trim(),mode=input.mode||'hand',images=input.images||{},gender=input.gender||'',box=document.querySelector('#questionAnswer');
   if(!box)return;
   if(!question){box.innerHTML='<span class="tag">问题未写清</span><h3>请先写一个具体问题</h3><p>一次只问一件事。照片特征会围绕这件事解释。</p>';box.classList.add('show');return;}
   var selected=[];
@@ -242,7 +287,7 @@ async function handlePhysio(input){
     }
     var good=results.filter(function(x){return x.ok;});
     if(!good.length)throw new Error(results.map(function(x){return x.label+'：'+x.error;}).join('；'));
-    var askedTopic=topicOf(question),crossMarks=fuseFaceMarks(good);box.innerHTML=renderPhysio(question,askedTopic,good,crossMarks,null);bindMarkConfirmation(box,question,askedTopic,good,crossMarks);
+    var askedTopic=topicOf(question),crossMarks=fuseFaceMarks(good);box.innerHTML=renderPhysio(question,askedTopic,good,crossMarks,null,gender);bindMarkConfirmation(box,question,askedTopic,good,crossMarks,null,gender);
     box.classList.add('source-personal');document.querySelector('#scanResult')?.classList.remove('show');box.scrollIntoView({behavior:'smooth',block:'start'});
   }catch(err){
     box.innerHTML='<span class="tag">识别没有完成</span><h3>请检查照片后重试</h3><p>'+esc(err&&err.message||'五官定位模型暂时无法加载')+'。不要用旧的泛化结果代替照片识别。</p>';
@@ -283,5 +328,5 @@ function installDestiny(){
 var style=document.createElement('style');
 style.textContent='.source-personal .pa-title,.question-answer .pa-title{display:table!important;margin:22px 0 10px!important;font:700 17px/1.6 var(--serif)!important;color:inherit!important;border-bottom:4px solid #bcecf0}.pa-p{margin:7px 0;line-height:2;white-space:pre-line}.pa-bullet{margin:8px 0;padding-left:12px;line-height:1.95}.pa-quote{margin:10px 0;padding:14px 16px;border-left:3px solid #7dbfc3;background:#eef8f7;line-height:2;white-space:pre-line}.pa-confirm{margin:14px 0;padding:14px 16px;border:1px solid #dccb9e;border-radius:12px;background:#fff9e9}.pa-confirm b{font:700 14px/1.6 var(--serif)}.pa-confirm p{margin:6px 0 10px;line-height:1.8}.pa-confirm>div{display:flex;gap:8px}.pa-confirm-input{min-width:0;flex:1;border:1px solid #cfd8d2;border-radius:8px;padding:9px 10px;background:#fff}.pa-confirm-submit{border:0;border-radius:8px;padding:9px 16px;background:var(--green);color:#fff}.pa-confirm-error{display:block;min-height:18px;margin-top:6px;color:#a24640}.pa-gap{height:5px}.question-answer.source-personal>.tag{display:inline-block!important}.question-answer.source-personal>h3{display:table!important}@media(max-width:680px){.source-personal .pa-title,.question-answer .pa-title{font-size:16px}.pa-p,.pa-bullet,.pa-quote{line-height:1.9}}';
 document.head.appendChild(style);installDestiny();
-window.XingxuPersonalAnalysis={version:'5.1',handlePhysio:handlePhysio,analyzeFace:analyzeFace,destinyReport:destinyReport};
+window.XingxuPersonalAnalysis={version:'5.2',handlePhysio:handlePhysio,analyzeFace:analyzeFace,destinyReport:destinyReport};
 })();

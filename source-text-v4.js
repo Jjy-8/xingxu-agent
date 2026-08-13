@@ -334,7 +334,7 @@ function installPhysio(){
         const box=document.querySelector('#'+k+'Box');
         if(img?.naturalWidth&&box?.classList.contains('loaded'))images[k]=img;
       });
-      await window.XingxuPersonalAnalysis.handlePhysio({question:q,mode,images});
+      await window.XingxuPersonalAnalysis.handlePhysio({question:q,mode,images,gender:typeof activeProfile==='function'?(activeProfile()?.gender||''):''});
       return;
     }
     if(window.XingxuBilling&&!window.XingxuBilling.authorizeQuestion({channel:'手相面相',question:q||'整体分析'}))return;
