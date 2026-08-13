@@ -274,6 +274,7 @@ function sourceText(session){
   }
   return [Q.general,Q[d]||''].filter(Boolean).join('\n\n');
 }
+window.XingxuSourceText={select:sourceText,ziwei:Z,stars:ZS,sizhu:S,qimen:Q,hand:H,face:F};
 
 run=function(q){
   const p=activeProfile();
@@ -321,11 +322,21 @@ function installPhysio(){
   if(!btn)return;
   if(btn.dataset.sourceTextInstalled)return;
   btn.dataset.sourceTextInstalled='1';
-  btn.addEventListener('click',ev=>{
+  btn.addEventListener('click',async ev=>{
     ev.preventDefault();
     ev.stopImmediatePropagation();
     const q=document.querySelector('#physioQuestion')?.value.trim()||'';
     const mode=document.querySelector('[data-pm].active')?.dataset.pm||'hand';
+    if(window.XingxuPersonalAnalysis?.handlePhysio){
+      const images={};
+      ['left','right','face','faceLeft','faceRight'].forEach(k=>{
+        const img=document.querySelector('#'+k+'Img');
+        const box=document.querySelector('#'+k+'Box');
+        if(img?.naturalWidth&&box?.classList.contains('loaded'))images[k]=img;
+      });
+      await window.XingxuPersonalAnalysis.handlePhysio({question:q,mode,images});
+      return;
+    }
     if(window.XingxuBilling&&!window.XingxuBilling.authorizeQuestion({channel:'手相面相',question:q||'整体分析'}))return;
     const box=document.querySelector('#questionAnswer');
     if(!box)return;
