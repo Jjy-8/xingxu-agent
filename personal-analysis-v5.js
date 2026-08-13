@@ -49,6 +49,7 @@ function visibleName(x,y){
   var band=y<.26?'额部':y<.43?'眉眼附近':y<.62?'颧颊或鼻部附近':y<.78?'口周或面颊下部':'下巴附近';
   return side+band;
 }
+function visibleBand(y){return y<.26?'额部':y<.43?'眉眼附近':y<.62?'颧颊或鼻部附近':y<.78?'口周或面颊下部':'下巴附近';}
 function imageCanvas(img,size){
   var c=document.createElement('canvas'),ctx=c.getContext('2d',{willReadFrequently:true});
   c.width=size;c.height=size;
@@ -62,7 +63,7 @@ function markCandidates(img,lm){
   var faceXs=lm.map(function(p){return map.x+p.x*map.w;}),faceYs=lm.map(function(p){return map.y+p.y*map.h;});
   var minX=Math.max(0,Math.floor(Math.min.apply(null,faceXs))),maxX=Math.min(w-1,Math.ceil(Math.max.apply(null,faceXs)));
   var minY=Math.max(0,Math.floor(Math.min.apply(null,faceYs))),maxY=Math.min(h-1,Math.ceil(Math.max.apply(null,faceYs)));
-  var cx=(minX+maxX)/2,cy=(minY+maxY)/2,rx=(maxX-minX)*.46,ry=(maxY-minY)*.50,mask=new Uint8Array(w*h);
+  var cx=(minX+maxX)/2,cy=(minY+maxY)/2,rx=(maxX-minX)*.46,ry=(maxY-minY)*.50,mask=new Uint8Array(w*h),strengthMap=new Float32Array(w*h),edgeSum=0,edgeCount=0;
   function excluded(nx,ny){
     return (ny>.28&&ny<.48&&Math.abs(nx-.5)>.10)||(ny>.56&&ny<.73&&Math.abs(nx-.5)<.27)||(ny>.37&&ny<.59&&Math.abs(nx-.5)<.10);
   }
@@ -71,21 +72,47 @@ function markCandidates(img,lm){
     if((((x-cx)/rx)**2+((y-cy)/ry)**2)>1||excluded(nx,ny))continue;
     var i=(y*w+x)*4,R=d[i],G=d[i+1],B=d[i+2],lum=.299*R+.587*G+.114*B,base=.299*bg[i]+.587*bg[i+1]+.114*bg[i+2];
     var dark=base-lum,red=R-(G+B)/2;
-    if((dark>31&&lum>22)||(red>34&&dark>10))mask[y*w+x]=1;
+    if(x>minX&&y>minY){edgeSum+=Math.abs(lum-(.299*d[i-4]+.587*d[i-3]+.114*d[i-2]))+Math.abs(lum-(.299*d[i-w*4]+.587*d[i-w*4+1]+.114*d[i-w*4+2]));edgeCount+=2;}
+    if((dark>31&&lum>22)||(red>34&&dark>10)){mask[y*w+x]=1;strengthMap[y*w+x]=Math.max(dark,red);}
   }
+  var facePixels=(Math.max.apply(null,lm.map(function(p){return p.x;}))-Math.min.apply(null,lm.map(function(p){return p.x;})))*img.naturalWidth;
+  var clarity=Math.min(1,facePixels/360)*.58+Math.min(1,(edgeSum/Math.max(1,edgeCount))/24)*.42;
   var seen=new Uint8Array(w*h),out=[];
   for(var y=minY;y<=maxY;y++)for(var x=minX;x<=maxX;x++){
     var id=y*w+x;if(!mask[id]||seen[id])continue;
-    var q=[id],n=0,sx=0,sy=0,loX=x,hiX=x,loY=y,hiY=y;seen[id]=1;
-    while(q.length){var k=q.pop(),yy=Math.floor(k/w),xx=k-yy*w;n++;sx+=xx;sy+=yy;loX=Math.min(loX,xx);hiX=Math.max(hiX,xx);loY=Math.min(loY,yy);hiY=Math.max(hiY,yy);
+    var q=[id],n=0,sx=0,sy=0,scoreSum=0,loX=x,hiX=x,loY=y,hiY=y;seen[id]=1;
+    while(q.length){var k=q.pop(),yy=Math.floor(k/w),xx=k-yy*w;n++;sx+=xx;sy+=yy;scoreSum+=strengthMap[k];loX=Math.min(loX,xx);hiX=Math.max(hiX,xx);loY=Math.min(loY,yy);hiY=Math.max(hiY,yy);
       for(var oy=-1;oy<=1;oy++)for(var ox=-1;ox<=1;ox++){var X=xx+ox,Y=yy+oy,j=Y*w+X;if(X>=0&&X<w&&Y>=0&&Y<h&&mask[j]&&!seen[j]){seen[j]=1;q.push(j);}}
     }
-    if(n>=4&&n<=115){var bw=hiX-loX+1,bh=hiY-loY+1,aspect=Math.max(bw,bh)/Math.max(1,Math.min(bw,bh));out.push({n:n,x:(sx/n-minX)/(maxX-minX),y:(sy/n-minY)/(maxY-minY),aspect:aspect});}
+    if(n>=4&&n<=115){var bw=hiX-loX+1,bh=hiY-loY+1,aspect=Math.max(bw,bh)/Math.max(1,Math.min(bw,bh)),mean=scoreSum/n,shape=aspect<=2.4?.16:aspect>3&&n>10?.09:0,confidence=Math.min(1,Math.max(0,(mean-27)/35)*.62+Math.min(1,n/13)*.22+shape);out.push({n:n,x:(sx/n-minX)/(maxX-minX),y:(sy/n-minY)/(maxY-minY),aspect:aspect,confidence:confidence,clarity:clarity});}
   }
-  return out.sort(function(a,b){return b.n-a.n;}).slice(0,4).map(function(c){
-    var type=c.aspect>3&&c.n>10?'疑似线状疤痕或褶痕':'疑似痣、色斑或胎记色点';
-    return type+'：'+visibleName(c.x,c.y)+'（需以原图放大复核）';
+  return out.sort(function(a,b){return b.confidence-a.confidence;}).slice(0,4).map(function(c){
+    c.kind=c.aspect>3&&c.n>10?'line':'spot';c.band=visibleBand(c.y);c.clear=c.clarity>=.66&&c.confidence>=.68;
+    c.type=c.kind==='line'?'线状疤痕或褶痕':'痣、色斑或胎记色点';
+    c.text=(c.clear?'清楚可见的':'疑似')+c.type+'：'+visibleName(c.x,c.y)+(c.clear?'（本张照片边界较清楚）':'（需结合其他角度或放大原图复核）');
+    return c;
   });
+}
+function fuseFaceMarks(results){
+  var observations=[];
+  results.filter(function(r){return r.ok&&/脸$/.test(r.label);}).forEach(function(r){(r.marks||[]).forEach(function(m){observations.push({label:r.label,mark:m});});});
+  var groups=[];
+  observations.forEach(function(o){
+    var g=groups.find(function(x){
+      if(x.kind!==o.mark.kind||Math.abs(x.y-o.mark.y)>.085)return false;
+      var prior=x.items[0],bothProfiles=prior.label!=='正脸'&&o.label!=='正脸';
+      if(bothProfiles&&prior.label!==o.label)return false;
+      return prior.label==='正脸'||o.label==='正脸'||Math.abs(prior.mark.x-o.mark.x)<.16;
+    });
+    if(!g){g={kind:o.mark.kind,y:o.mark.y,items:[]};groups.push(g);}g.items.push(o);g.y=g.items.reduce(function(s,z){return s+z.mark.y;},0)/g.items.length;
+  });
+  return groups.map(function(g){
+    var best=g.items.slice().sort(function(a,b){return (b.mark.clear-a.mark.clear)||(b.mark.confidence-a.mark.confidence);})[0],labels=Array.from(new Set(g.items.map(function(x){return x.label;}))),clear=g.items.some(function(x){return x.mark.clear;}),repeated=labels.length>=2;
+    var noun=g.kind==='line'?'线状疤痕样标记':'痣样色点',where=best.label==='正脸'?visibleName(best.mark.x,best.mark.y):best.mark.band;
+    if(clear)return{confirmed:true,kind:g.kind,text:'单张清楚确认：'+best.label+'在'+where+'清楚显示'+noun+'，可直接作为该人的可见特征；其他角度只用于补充位置。'};
+    if(repeated)return{confirmed:true,kind:g.kind,text:'多图交叉确认：'+labels.join('与')+'在相近的'+best.mark.band+'重复出现同类标记，判定该部位有'+noun+'，不是只凭一张模糊照片下结论。'};
+    return{confirmed:false,kind:g.kind,text:'仅单张疑似：'+best.label+'在'+where+'出现'+noun+'候选，但其他照片没有形成同位置印证，暂不判定为已有痣或疤痕。'};
+  }).sort(function(a,b){return Number(b.confirmed)-Number(a.confirmed);});
 }
 async function analyzeFace(img,label){
   var detector=await getFaceLandmarker(),result=detector.detect(img),lm=result.faceLandmarks&&result.faceLandmarks[0];
@@ -107,7 +134,7 @@ async function analyzeFace(img,label){
   if(Math.abs(mouthDev)>=.02)features.push('口部位置：口部中心相对面中线'+sideText(mouthDev)+'偏');
   if(Math.abs(browDiff)>=.025)features.push('眉部：'+(browDiff>0?'画面左眉较高、右眉较低':'画面右眉较高、左眉较低'));
   if(Math.abs(eyeDiff)>=.02)features.push('眼部：两眼水平位置可见轻微高低差');
-  var marks=markCandidates(img,lm);features=features.concat(marks.length?marks:['特殊标记：当前清晰度下未检出足够明确的痣、胎记或疤痕候选']);
+  var marks=markCandidates(img,lm);features=features.concat(marks.length?marks.map(function(x){return x.text;}):['特殊标记：当前清晰度下未检出足够明确的痣、胎记或疤痕候选']);
   return{ok:true,label:label,frontal:frontal,noseDev:noseDev,mouthDev:mouthDev,mouthSlope:mouthSlope,browDiff:browDiff,features:features,marks:marks};
 }
 function handMarks(pack,d){
@@ -143,11 +170,11 @@ var HAND_ORIGINAL={
   career:'论掌纹曰：“人纹象人贤愚，主人贫富。”盖人纹以象人智慧之贤愚，以喻聪明智慧之赚聚生财故也。',
   mark:'掌中足底生黑痣者，贵而益夫。'
 };
-function featureRelevance(topic,features){
+function featureRelevance(topic,features,markConfirmed){
   var hasFace=features.some(function(x){return /鼻部：|口部：|眉部：|眼部：|拍摄状态：/.test(x);});
   var hasNose=features.some(function(x){return /鼻部：/.test(x)&&!/未见明显/.test(x);});
   var hasMouth=features.some(function(x){return /口部/.test(x)&&!/未见明显/.test(x);});
-  var hasMark=features.some(function(x){return /疑似痣|疑似线状/.test(x);});
+  var hasMark=!!markConfirmed||features.some(function(x){return /单张清楚确认|多图交叉确认|本人确认：.*确实有/.test(x);});
   var lead=topic==='感情'?'这次要把沟通方式、现实责任与关系稳定性放在一起看':topic==='事业'?'这次重点看表达执行、对外协作与承担责任的方式':topic==='财运'?'这次重点看取得资源、谈判表达与守住成果的方式':topic==='家庭'?'这次重点看家庭沟通、责任边界与长期相处':topic==='人际'?'这次重点看表达分寸、信任与合作边界':topic==='健康'?'外观特征不能诊断健康；只描述照片可见情况，有新生、变大、出血或不对称的痣疤应由医生检查':'这次从照片可见结构说明个人差异，不拿单一部位替代整体判断';
   var out=[lead+'。'];
   if(hasMouth)out.push('口部高低或偏斜与所问最直接对应的是表达方式：重要话题容易因语气、先后顺序或失言产生误解，因此回答不能只说“感情/事业一般”，而要把沟通这一项单独列为关键点。');
@@ -156,22 +183,47 @@ function featureRelevance(topic,features){
   if(!hasNose&&!hasMouth&&!hasMark)out.push(hasFace?'当前清晰度下没有出现足以单独下结论的鼻口偏斜或特殊标记，回答应以实际看清的整体结构为主，不能凭空补出痣、胎记或疤痕。':'当前手掌照片没有检出边界足够明确的特殊标记，回答只能使用实际看清的掌色、纹理与轮廓，不能凭空补出痣、胎记或疤痕。');
   return out;
 }
-function originalsFor(features,results,topic){
+function originalsFor(features,results,topic,markConfirmed){
   var a=[],hasFace=results.some(function(x){return /脸$/.test(x.label)||x.label==='正脸';}),hasHand=results.some(function(x){return /掌$/.test(x.label);});
-  if(hasFace){a.push(FACE_ORIGINAL.whole);if(features.some(function(x){return /鼻部：/.test(x)&&!/未见明显/.test(x);}))a.push(FACE_ORIGINAL.nose);if(features.some(function(x){return /口部/.test(x)&&!/未见明显/.test(x);}))a.push(FACE_ORIGINAL.mouth);if(features.some(function(x){return /疑似痣|疑似线状/.test(x);}))a.push(FACE_ORIGINAL.mark);}
+  if(hasFace){a.push(FACE_ORIGINAL.whole);if(features.some(function(x){return /鼻部：/.test(x)&&!/未见明显/.test(x);}))a.push(FACE_ORIGINAL.nose);if(features.some(function(x){return /口部/.test(x)&&!/未见明显/.test(x);}))a.push(FACE_ORIGINAL.mouth);if(markConfirmed)a.push(FACE_ORIGINAL.mark);}
   if(hasHand){a.push(HAND_ORIGINAL.whole);if(topic==='感情')a.push(HAND_ORIGINAL.relation);if(topic==='事业'||topic==='财运')a.push(HAND_ORIGINAL.career);if(features.some(function(x){return /疑似痣|疑似线状/.test(x);}))a.push(HAND_ORIGINAL.mark);}
   return a;
 }
-function renderPhysio(question,topic,results,original){
-  var features=[];results.forEach(function(r){if(r.ok)r.features.forEach(function(x){features.push((results.length>1?r.label+'｜':'')+x);});});
-  var analysis=featureRelevance(topic,features),html='<span class="tag">逐项识别 · 只围绕所问</span>';
+function physioFeatures(results,crossMarks,manualMarks){
+  var features=[];
+  results.forEach(function(r){if(r.ok)r.features.forEach(function(x){
+    if(/脸$/.test(r.label)&&/特殊标记：|痣、色斑|胎记|疤痕|褶痕/.test(x))return;
+    features.push((results.length>1?r.label+'｜':'')+x);
+  });});
+  var faces=results.filter(function(r){return r.ok&&/脸$/.test(r.label);});
+  if(faces.length){
+    if(!crossMarks.length)features.push((faces.length>1?'多图核对':'单图核对')+'：当前清晰度下未检出痣、胎记或疤痕候选。');
+    crossMarks.forEach(function(x,i){
+      if(x.confirmed)features.push(x.text);
+      else if(manualMarks&&manualMarks[i]==='yes')features.push('本人确认：'+x.text.replace(/^仅单张疑似：/,'')+'；该位置确实有'+(x.kind==='line'?'疤痕样标记':'痣或胎记色点')+'，后续按已确认特征采用。');
+      else if(manualMarks&&manualMarks[i]==='no')features.push('本人确认：'+x.text.replace(/^仅单张疑似：/,'')+'；该位置实际没有痣、胎记或疤痕，后续不采用该候选。');
+      else features.push(x.text);
+    });
+  }
+  return features;
+}
+function renderPhysio(question,topic,results,crossMarks,manualMarks){
+  var features=physioFeatures(results,crossMarks,manualMarks),markConfirmed=crossMarks.some(function(x,i){return x.confirmed||(manualMarks&&manualMarks[i]==='yes');});
+  var analysis=featureRelevance(topic,features,markConfirmed),original=originalsFor(features,results,topic,markConfirmed),html='<span class="tag">逐项识别 · 多图交叉核对</span>';
   html+='<h3 class="pa-title">一、你问的事情</h3><div class="pa-p">'+esc(question)+'</div>';
   html+='<h3 class="pa-title">二、照片中实际看到的个人特征</h3>'+features.map(function(x){return '<div class="pa-bullet">• '+esc(x)+'</div>';}).join('');
+  crossMarks.forEach(function(x,i){if(!x.confirmed&&!(manualMarks&&manualMarks[i]))html+='<div class="pa-confirm" data-mark-index="'+i+'"><b>照片仍无法确定，请本人确认</b><p>'+esc(x.text)+'<br>这个位置实际是否有痣、胎记或疤痕？请输入“有”或“无”。</p><div><input class="pa-confirm-input" inputmode="text" placeholder="请输入：有 或 无"><button type="button" class="pa-confirm-submit">确认</button></div><small class="pa-confirm-error" aria-live="polite"></small></div>';});
   html+='<h3 class="pa-title">三、这些特征怎样对应你的问题</h3>'+analysis.map(function(x){return '<div class="pa-p">'+esc(x)+'</div>';}).join('');
   html+='<h3 class="pa-title">四、对应原文</h3>'+original.map(function(x){return '<div class="pa-quote">'+esc(x)+'</div>';}).join('');
   var focus=analysis.slice(1).join('')||analysis[0];
   html+='<h3 class="pa-title">五、综合回答</h3><div class="pa-p">这次结论只建立在上面明确列出的可见特征上。最需要抓住的是：'+esc(focus)+'照片角度、镜像和光线会改变左右判断；凡写有“疑似”或“需复核”的特征，都不能当成已经确认。</div>';
   return html;
+}
+function bindMarkConfirmation(box,question,topic,results,crossMarks,manualMarks){
+  manualMarks=manualMarks||{};box.querySelectorAll('.pa-confirm').forEach(function(panel){var input=panel.querySelector('.pa-confirm-input'),button=panel.querySelector('.pa-confirm-submit'),error=panel.querySelector('.pa-confirm-error'),index=Number(panel.getAttribute('data-mark-index'));
+    function submit(){var v=String(input.value||'').trim();var yes=/^(有|是|确实有|有的)$/.test(v),no=/^(无|没有|否|确实没有|没有的)$/.test(v);if(!yes&&!no){error.textContent='请只输入“有”或“无”。';input.focus();return;}manualMarks[index]=yes?'yes':'no';box.innerHTML=renderPhysio(question,topic,results,crossMarks,manualMarks);bindMarkConfirmation(box,question,topic,results,crossMarks,manualMarks);}
+    button.addEventListener('click',submit);input.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();submit();}});
+  });
 }
 async function handlePhysio(input){
   var question=String(input.question||'').trim(),mode=input.mode||'hand',images=input.images||{},box=document.querySelector('#questionAnswer');
@@ -190,8 +242,7 @@ async function handlePhysio(input){
     }
     var good=results.filter(function(x){return x.ok;});
     if(!good.length)throw new Error(results.map(function(x){return x.label+'：'+x.error;}).join('；'));
-    var all=[];good.forEach(function(r){all=all.concat(r.features);});
-    var askedTopic=topicOf(question);box.innerHTML=renderPhysio(question,askedTopic,good,originalsFor(all,good,askedTopic));
+    var askedTopic=topicOf(question),crossMarks=fuseFaceMarks(good);box.innerHTML=renderPhysio(question,askedTopic,good,crossMarks,null);bindMarkConfirmation(box,question,askedTopic,good,crossMarks);
     box.classList.add('source-personal');document.querySelector('#scanResult')?.classList.remove('show');box.scrollIntoView({behavior:'smooth',block:'start'});
   }catch(err){
     box.innerHTML='<span class="tag">识别没有完成</span><h3>请检查照片后重试</h3><p>'+esc(err&&err.message||'五官定位模型暂时无法加载')+'。不要用旧的泛化结果代替照片识别。</p>';
@@ -230,7 +281,7 @@ function installDestiny(){
   };
 }
 var style=document.createElement('style');
-style.textContent='.source-personal .pa-title,.question-answer .pa-title{display:table!important;margin:22px 0 10px!important;font:700 17px/1.6 var(--serif)!important;color:inherit!important;border-bottom:4px solid #bcecf0}.pa-p{margin:7px 0;line-height:2;white-space:pre-line}.pa-bullet{margin:8px 0;padding-left:12px;line-height:1.95}.pa-quote{margin:10px 0;padding:14px 16px;border-left:3px solid #7dbfc3;background:#eef8f7;line-height:2;white-space:pre-line}.pa-gap{height:5px}.question-answer.source-personal>.tag{display:inline-block!important}.question-answer.source-personal>h3{display:table!important}@media(max-width:680px){.source-personal .pa-title,.question-answer .pa-title{font-size:16px}.pa-p,.pa-bullet,.pa-quote{line-height:1.9}}';
+style.textContent='.source-personal .pa-title,.question-answer .pa-title{display:table!important;margin:22px 0 10px!important;font:700 17px/1.6 var(--serif)!important;color:inherit!important;border-bottom:4px solid #bcecf0}.pa-p{margin:7px 0;line-height:2;white-space:pre-line}.pa-bullet{margin:8px 0;padding-left:12px;line-height:1.95}.pa-quote{margin:10px 0;padding:14px 16px;border-left:3px solid #7dbfc3;background:#eef8f7;line-height:2;white-space:pre-line}.pa-confirm{margin:14px 0;padding:14px 16px;border:1px solid #dccb9e;border-radius:12px;background:#fff9e9}.pa-confirm b{font:700 14px/1.6 var(--serif)}.pa-confirm p{margin:6px 0 10px;line-height:1.8}.pa-confirm>div{display:flex;gap:8px}.pa-confirm-input{min-width:0;flex:1;border:1px solid #cfd8d2;border-radius:8px;padding:9px 10px;background:#fff}.pa-confirm-submit{border:0;border-radius:8px;padding:9px 16px;background:var(--green);color:#fff}.pa-confirm-error{display:block;min-height:18px;margin-top:6px;color:#a24640}.pa-gap{height:5px}.question-answer.source-personal>.tag{display:inline-block!important}.question-answer.source-personal>h3{display:table!important}@media(max-width:680px){.source-personal .pa-title,.question-answer .pa-title{font-size:16px}.pa-p,.pa-bullet,.pa-quote{line-height:1.9}}';
 document.head.appendChild(style);installDestiny();
-window.XingxuPersonalAnalysis={version:'5.0',handlePhysio:handlePhysio,analyzeFace:analyzeFace,destinyReport:destinyReport};
+window.XingxuPersonalAnalysis={version:'5.1',handlePhysio:handlePhysio,analyzeFace:analyzeFace,destinyReport:destinyReport};
 })();
